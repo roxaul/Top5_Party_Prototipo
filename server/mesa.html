@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mesa — Top 5 Party</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f1a;
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a1a2e;
+      border-bottom: 2px solid #6c63ff;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 { font-size: 1.5rem; color: #a78bfa; }
+
+    #status-badge {
+      background: #22c55e;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #status-badge.offline { background: #ef4444; }
+
+    #qr-container {
+      margin-left: auto;
+      text-align: center;
+    }
+    #qr-container img { width: 80px; height: 80px; border-radius: 8px; }
+    #qr-container small { display: block; font-size: 0.65rem; color: #94a3b8; margin-top: 4px; }
+
+    main {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
+      padding: 24px 32px;
+      flex: 1;
+    }
+
+    .panel {
+      background: #1a1a2e;
+      border: 1px solid #2d2d44;
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .panel h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #6c63ff;
+      margin-bottom: 16px;
+    }
+
+    /* ── Lista de jogadores ── */
+    #player-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .player-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #0f0f1a;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+    }
+    .player-item.offline { opacity: 0.4; }
+
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex-shrink: 0;
+    }
+    .player-item.offline .dot { background: #ef4444; }
+
+    #empty-msg { color: #475569; font-size: 0.85rem; text-align: center; padding: 24px 0; }
+
+    /* ── Mesa (cartas jogadas) ── */
+    #table-area {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-content: flex-start;
+      min-height: 200px;
+    }
+
+    .card {
+      width: 140px;
+      background: linear-gradient(135deg, #2d2d44, #1a1a2e);
+      border: 2px solid #6c63ff;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      animation: cardDrop 0.3s ease;
+    }
+
+    @keyframes cardDrop {
+      from { transform: translateY(-20px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+
+    .card .card-text { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
+    .card .card-player { font-size: 0.7rem; color: #a78bfa; }
+
+    #no-cards-msg {
+      color: #475569;
+      font-size: 0.9rem;
+      margin: auto;
+      text-align: center;
+    }
+
+    /* ── Log ── */
+    #log {
+      grid-column: 1 / -1;
+      max-height: 140px;
+      overflow-y: auto;
+      background: #0a0a12;
+      border: 1px solid #2d2d44;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #64748b;
+    }
+    #log p { margin: 2px 0; }
+    #log .info  { color: #38bdf8; }
+    #log .warn  { color: #f59e0b; }
+    #log .event { color: #86efac; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎮 Top 5 Party — Mesa</h1>
+  <span id="status-badge" class="offline">Offline</span>
+  <div id="qr-container">
+    <img id="qr-img" src="/qr" alt="QR Code" />
+    <small id="qr-url">carregando...</small>
+  </div>
+</header>
+
+<main>
+  <!-- Painel lateral: jogadores -->
+  <aside class="panel">
+    <h2>Jogadores (<span id="player-count">0</span>)</h2>
+    <div id="player-list">
+      <p id="empty-msg">Aguardando jogadores...</p>
+    </div>
+  </aside>
+
+  <!-- Área central: cartas na mesa -->
+  <section class="panel">
+    <h2>Mesa</h2>
+    <div id="table-area">
+      <p id="no-cards-msg">Nenhuma carta jogada ainda.</p>
+    </div>
+  </section>
+
+  <!-- Log de eventos -->
+  <div id="log"></div>
+</main>
+
+<script>
+  const socket = io();
+
+  // ── UI helpers ──────────────────────────────────────────────────────────────
+
+  const badge    = document.getElementById('status-badge');
+  const qrImg    = document.getElementById('qr-img');
+  const qrUrl    = document.getElementById('qr-url');
+  const pList    = document.getElementById('player-list');
+  const pCount   = document.getElementById('player-count');
+  const emptyMsg = document.getElementById('empty-msg');
+  const tableArea= document.getElementById('table-area');
+  const noCards  = document.getElementById('no-cards-msg');
+  const log      = document.getElementById('log');
+
+  function addLog(msg, type = 'info') {
+    const p = document.createElement('p');
+    p.className = type;
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    log.prepend(p);
+    if (log.children.length > 60) log.lastChild.remove();
+  }
+
+  // Detecta URL do servidor para exibir no QR
+  qrUrl.textContent = location.host;
+  qrImg.src = '/qr?' + Date.now(); // evita cache
+
+  // ── Conexão ─────────────────────────────────────────────────────────────────
+
+  socket.on('connect', () => {
+    badge.textContent = 'Online';
+    badge.classList.remove('offline');
+    socket.emit('host:join');
+    addLog('Mesa conectada ao servidor.', 'info');
+  });
+
+  socket.on('disconnect', () => {
+    badge.textContent = 'Offline';
+    badge.classList.add('offline');
+    addLog('Conexão perdida. Reconectando...', 'warn');
+  });
+
+  // ── Estado do lobby ─────────────────────────────────────────────────────────
+
+  function renderPlayers(players) {
+    pCount.textContent = players.length;
+    if (players.length === 0) {
+      pList.innerHTML = '<p id="empty-msg">Aguardando jogadores...</p>';
+      return;
+    }
+    pList.innerHTML = players.map(p => `
+      <div class="player-item ${p.connected ? '' : 'offline'}">
+        <span class="dot"></span>
+        <span>${escapeHtml(p.name)}</span>
+      </div>
+    `).join('');
+  }
+
+  socket.on('lobby:state',  (state) => renderPlayers(state.players));
+  socket.on('lobby:update', (state) => {
+    renderPlayers(state.players);
+    addLog(`Lobby: ${state.players.filter(p => p.connected).length} jogador(es) online.`, 'info');
+  });
+
+  // ── Cartas jogadas ──────────────────────────────────────────────────────────
+
+  socket.on('card:played', ({ playerName, card }) => {
+    noCards.style.display = 'none';
+
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <span class="card-text">${escapeHtml(card.text)}</span>
+      <span class="card-player">por ${escapeHtml(playerName)}</span>
+    `;
+    tableArea.appendChild(div);
+    addLog(`${playerName} jogou: "${card.text}"`, 'event');
+  });
+
+  // ── Segurança ───────────────────────────────────────────────────────────────
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>

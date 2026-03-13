@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(cmd.exe /c \"where npm 2>nul && npm --version\")",
+      "Bash(cmd.exe /c \"where npm\")",
+      "Bash(powershell.exe -Command \"Get-Command npm -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
+      "Bash(npm --version)",
+      "Bash(npm run:*)",
+      "Bash(timeout 5 node index.js)"
+    ]
+  }
+}
