@@ -1,34 +1,85 @@
 # 🎮 Top 5 Party
 
-Party game multiplayer local onde o PC funciona como a tela principal (**Mesa**) e os smartphones dos jogadores funcionam como controles individuais (**Mão**).
+> **"Você acha que conhece as preferências dos seus amigos? Prove."**
+
+Top 5 Party é um **party game multiplayer local** onde cada jogador usa o próprio celular como controle — sem instalar nada. O PC ou Steam Deck vira a tela central do jogo. Basta estar na mesma rede Wi-Fi.
 
 ---
 
-## Sumário
+## O Conceito
 
-- [Visão Geral](#visão-geral)
-- [Arquitetura](#arquitetura)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Pré-requisitos](#pré-requisitos)
-- [Instalação](#instalação)
-- [Como Iniciar](#como-iniciar)
-- [Como Jogar (Fluxo Atual)](#como-jogar-fluxo-atual)
-- [Eventos WebSocket](#eventos-websocket)
-- [Próximos Passos](#próximos-passos)
+A premissa é simples e social: **todo mundo tem opiniões, e ninguém concorda com ninguém.**
 
----
+A cada rodada, os jogadores respondem a um tema com sua lista pessoal de Top 5 — do mais ao menos favorito. As respostas viram cartas físicas num baralho virtual, embaralhadas e redistribuídas anonimamente. Você não sabe de quem é a carta que está na sua mão.
 
-## Visão Geral
+A mecânica central é de **vazas** (trick-taking): quem jogar a carta de maior valor leva a rodada. O valor de uma carta é determinado pela posição original na lista de quem a criou — um **1º lugar vale 5 pontos**, um **5º lugar vale 1 ponto**. O segredo é descobrir o que seu amigo colocou como favorito — e jogar na hora certa.
 
-O jogo é baseado em uma dinâmica social de adivinhação de preferências — **"Top 5"**. Cada jogador submete listas de preferências sobre um tema (ex: *"Top 5 Filmes de Terror"*), as respostas são embaralhadas em cartas e distribuídas entre os jogadores. Ninguém sabe de quem é a carta que tem na mão.
+### O Twist: a Aposta
 
-A mecânica de pontuação é baseada em vazas: quem jogar a carta de **maior valor** (posição no ranking original do dono) vence a rodada.
+Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acertou? Bônus de pontos. Errou? Penalidade. Isso transforma cada jogada num momento de tensão social: *"Isso aqui parece coisa do João... ou será da Mari?"*
 
 ---
 
-## Arquitetura
+## Por que vai funcionar
 
-O sistema opera em uma **Tríade Local** — tudo roda na mesma rede Wi-Fi, sem necessidade de internet para o gameplay:
+| Ponto forte | Detalhe |
+|-------------|---------|
+| **Zero atrito para entrar** | Basta escanear o QR Code. Nenhum app para instalar |
+| **Conteúdo gerado pelos próprios jogadores** | As cartas são as opiniões reais de quem está na mesa |
+| **Imagens geradas automaticamente** | Cada carta busca uma imagem real na web e aplica um shader artístico (óleo, pixel art ou cel-shading) — visual único em cada partida |
+| **Funciona offline** | Após o download das imagens, o jogo roda sem internet |
+| **Steam Deck ready** | Pensado para rodar no Steam Deck como host portátil numa mesa de bar ou sala |
+
+---
+
+## Fluxo de uma Partida
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. HOST abre o jogo no PC/Steam Deck                        │
+│     └── QR Code aparece na tela grande                       │
+│                                                              │
+│  2. JOGADORES escaneiam com o celular (3 a 8 pessoas)        │
+│     └── Primeiro a entrar vira o HOST da rodada              │
+│                                                              │
+│  3. HOST escolhe o TEMA no celular                           │
+│     Ex: "Top 5 Músicas para Churrasco"                       │
+│                                                              │
+│  4. TODOS submetem seu Top 5 secretamente                    │
+│     1º: Bruno Mars  2º: Seu Jorge  3º: ...                   │
+│                                                              │
+│  5. Servidor embaralha tudo e distribui as cartas            │
+│     └── Você pode estar com a carta favorita do João         │
+│                                                              │
+│  6. Rodada de VAZAS começa                                   │
+│     └── Toque em "Jogar" ou deslize a carta para cima        │
+│     └── Antes de jogar: aposte em quem criou a carta         │
+│                                                              │
+│  7. REVELAÇÃO: a tela grande mostra o dono + valor real      │
+│     └── Pontuação atualizada, próxima rodada                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Visual — A Feature que Diferencia
+
+Quando um jogador digita *"Pizza de Calabresa"*, o sistema não exibe só texto. Ele:
+
+1. Faz uma busca na **Google Custom Search API** com Safe Search ativado
+2. Baixa a imagem encontrada
+3. Aplica um **shader artístico** via Unity Shader Graph — transformando qualquer foto em arte no estilo **Pintura a Óleo**, **Pixel Art** ou **Cel-shading**
+4. Salva em cache local para não repetir a busca
+
+O resultado: cartas com visual consistente e artístico, independente de onde a imagem veio. Baixa resolução? Não importa — o shader esconde isso com estilo.
+
+> Imagens são cacheadas localmente. Se a cota da API acabar ou a internet cair, o jogo usa placeholders artísticos e continua funcionando.
+
+---
+
+## Arquitetura Técnica
+
+O sistema opera em **Tríade Local** — tudo na mesma rede, sem servidor externo:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -36,13 +87,12 @@ O sistema opera em uma **Tríade Local** — tudo roda na mesma rede Wi-Fi, sem 
 │                                                          │
 │   ┌──────────────┐        ┌─────────────────────────┐   │
 │   │  Unity (PC)  │◄──────►│   Servidor Node.js      │   │
-│   │    Mesa      │        │   Express + Socket.io   │   │
-│   │  (Host)      │        │   Porta 3000            │   │
+│   │    Mesa      │        │   Express + Socket.IO   │   │
+│   │  Host Visual │        │   Porta 3000            │   │
 │   └──────────────┘        └────────────┬────────────┘   │
 │                                        │                  │
 │                           ┌────────────▼────────────┐   │
 │                           │   React App (Mão)        │   │
-│                           │   Servido pelo Node.js   │   │
 │                           │   Acessado no celular    │   │
 │                           └─────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
@@ -50,185 +100,123 @@ O sistema opera em uma **Tríade Local** — tudo roda na mesma rede Wi-Fi, sem 
 
 | Componente | Tecnologia | Papel |
 |---|---|---|
-| **Host / Mesa** | Unity (futuro) / HTML (atual) | Tela principal, gráficos, estado do jogo |
-| **Servidor** | Node.js + Socket.io + Express | Ponte WebSocket, serve o app mobile |
-| **Mão (Controle)** | React + Vite + TailwindCSS | Interface do jogador no celular |
+| **Mesa** | Unity 2022 LTS + Shader Graph | Gráficos, áudio, animações, shaders nas cartas |
+| **Servidor** | Node.js + Socket.IO + Express | Estado do jogo, WebSocket, serve o app mobile |
+| **Mão** | React + Vite + Tailwind CSS | Controle individual no celular |
+
+Detalhes técnicos de cada camada: [`server/README.md`](server/README.md) · [`client/README.md`](client/README.md)
 
 ---
 
-## Estrutura do Projeto
+## Stack
 
-```
-top5party/
-│
-├── package.json              # Scripts raiz (install:all, start, build)
-├── .gitignore
-│
-├── server/                   # Servidor Node.js
-│   ├── package.json
-│   ├── index.js              # Servidor principal (HTTP + WebSocket)
-│   └── mesa.html             # Tela da Mesa para testes (sem Unity)
-│
-└── client/                   # App mobile (React)
-    ├── package.json
-    ├── vite.config.js        # Proxy para o servidor em desenvolvimento
-    ├── tailwind.config.js
-    ├── postcss.config.js
-    ├── index.html
-    └── src/
-        ├── main.jsx          # Ponto de entrada React
-        ├── App.jsx           # Gerenciamento de telas + lógica de reconexão
-        ├── socket.js         # Instância do Socket.io-client
-        ├── index.css         # Estilos globais (Tailwind)
-        └── pages/
-            ├── JoinPage.jsx  # Tela de entrada (digitar nome)
-            ├── LobbyPage.jsx # Sala de espera (ver jogadores conectados)
-            └── HandPage.jsx  # Mão do jogador (ver e jogar cartas)
-```
+| Componente | Tecnologia | Justificativa |
+|---|---|---|
+| Engine | Unity 2022 LTS | Shader Graph para estilização visual sem IA |
+| Servidor | Node.js + Socket.IO | Melhor biblioteca WebSocket para JS, estável e amplamente documentada |
+| Frontend | React + Vite + Tailwind CSS | UI responsiva e leve, hot reload em dev |
+| Comunicação Unity | SocketIOUnity (C#) | Padrão da indústria para Unity + WebSocket |
+| Imagens | Google Custom Search API | Filtro por licença + Safe Search strict |
 
 ---
 
-## Pré-requisitos
+## Estado Atual do Protótipo
 
-- [Node.js](https://nodejs.org/) v18 ou superior
-- Todos os dispositivos (PC + celulares) na **mesma rede Wi-Fi**
-- Navegador moderno nos celulares (Chrome, Safari, Firefox)
+O protótipo cobre a camada Node.js + React completa:
+
+- [x] Servidor WebSocket local com QR Code automático
+- [x] Lobby com reconexão automática (sessionId no localStorage)
+- [x] Designação automática de Host (primeiro jogador)
+- [x] Guia "Como funciona" exibido no lobby para todos os jogadores
+- [x] Tela de escolha de tema (host) com sugestões em grid 2 colunas
+- [x] Tela de espera do tema com mini-guia "O que vem a seguir" para não-hosts
+- [x] Submissão de Top 5 com posições color-coded (ouro/prata/bronze) e barra de preenchimento
+- [x] Montagem do baralho a partir das respostas dos jogadores
+- [x] Distribuição de cartas e fase de jogo (toque em "Jogar" ou swipe up)
+- [x] Mesa React com QR code, lista de jogadores, badge de fase e banner do tema
+- [x] Layout responsivo: portrait no celular, landscape no PC/tablet
+- [x] Suporte a safe-area iOS (notch, barra home) e 100svh
+- [ ] Fase de revelação com animação
+- [ ] Pontuação, placar e mecânica de aposta
+- [ ] Integração Unity como Mesa
+- [ ] Busca de imagens + cache + shaders
 
 ---
 
-## Instalação
+## Setup Rápido
 
-Na raiz do projeto, instale as dependências do servidor e do cliente de uma vez:
+### Modo produção (recomendado para jogar)
 
 ```bash
+# 1. Instalar dependências (só na primeira vez)
 npm run install:all
-```
 
-Ou manualmente:
+# 2. Compilar o cliente React
+cd client && npm run build && cd ..
 
-```bash
-# Servidor
-cd server
-npm install
-
-# Cliente
-cd ../client
-npm install
-```
-
----
-
-## Como Iniciar
-
-### Modo Desenvolvimento (recomendado para testes)
-
-Abra **dois terminais**:
-
-**Terminal 1 — Servidor:**
-```bash
-cd server
-node index.js
-```
-
-O terminal exibirá o IP da máquina e um **QR Code**:
-
-```
-╔══════════════════════════════════════╗
-║        🎮  Top 5 Party  🎮            ║
-╠══════════════════════════════════════╣
-║  Local:   http://localhost:3000       ║
-║  Rede:    http://192.168.1.10:3000   ║
-║  Mesa:    http://192.168.1.10:3000/mesa║
-║  QR Code: http://192.168.1.10:3000/qr ║
-╚══════════════════════════════════════╝
-```
-
-**Terminal 2 — Cliente React (hot reload):**
-```bash
-cd client
-npm run dev
-```
-
-### Modo Produção
-
-Gera o build do cliente e sobe apenas o servidor (que já serve os arquivos):
-
-```bash
+# 3. Iniciar o servidor
 npm start
 ```
 
----
+| URL | Quem acessa |
+|-----|-------------|
+| `http://IP:3000/mesa` | PC / TV — tela da Mesa (QR code + cartas) |
+| `http://IP:3000` | Celular — escaneie o QR Code para entrar |
 
-## Como Acessar Cada Parte
+> ⚠️ Sempre que alterar código do cliente, repita o passo 2 (`npm run build`) antes de reiniciar o servidor — caso contrário o browser continuará servindo a versão antiga.
 
-| Quem | URL | Descrição |
-|---|---|---|
-| **Mesa (PC)** | `http://localhost:3000/mesa` | Tela principal — vê jogadores e cartas jogadas |
-| **Jogador (celular)** | `http://192.168.x.x:3000` | Escaneia o QR Code ou digita o IP |
-| **QR Code** | `http://192.168.x.x:3000/qr` | Imagem PNG do QR Code para exibir na Mesa |
+### Modo desenvolvimento
 
-> O IP exato é exibido no terminal ao iniciar o servidor.
+```bash
+# Terminal 1 — servidor Node.js (porta 3000)
+npm run dev:server
 
----
-
-## Como Jogar (Fluxo Atual)
-
-```
-1. Host abre a Mesa no PC (localhost:3000/mesa)
-
-2. Jogadores escaneiam o QR Code com o celular
-   └── Digitam seu apelido → entram no Lobby
-
-3. Mesa exibe os jogadores conectados em tempo real
-   └── Indicador verde/vermelho mostra quem está online
-
-4. [Futuro] Host inicia a partida via Unity
-   └── Cartas são distribuídas para a Mão de cada jogador
-
-5. Jogador vê as cartas na Mão
-   └── Arrasta a carta para cima  →  carta vai para a Mesa
-   └── Ou clica na carta          →  mesmo efeito
-
-6. Mesa exibe as cartas jogadas com o nome de quem jogou
+# Terminal 2 — Vite com hot reload (porta 5173)
+npm run dev:client
 ```
 
-### Reconexão Automática
+| URL | Quem acessa |
+|-----|-------------|
+| `http://localhost:5173/mesa` | Mesa (dev) |
+| `http://localhost:5173` | Celular / player (dev) |
 
-Se o celular bloquear, o app fechar ou a conexão cair, ao reabrir o navegador o jogador é **reconectado automaticamente à mesma sessão** — sem perder as cartas na mão. O `sessionId` fica salvo no `localStorage` do navegador.
+> Em dev, o Vite faz proxy de `/socket.io` e `/qr` para o servidor na porta 3000. Ambos os terminais precisam estar rodando.
 
----
+### Parar o servidor
 
-## Eventos WebSocket
+```bash
+# No terminal onde o servidor roda: Ctrl+C
 
-A comunicação entre servidor, Mesa e celulares usa Socket.io. Abaixo os eventos implementados:
+# Se o terminal foi fechado e a porta 3000 ainda está ocupada:
+netstat -ano | findstr :3000   # anote o PID
+taskkill /PID <PID> /F
 
-### Cliente → Servidor
+# Ou para matar todos os processos Node.js:
+taskkill /IM node.exe /F
+```
 
-| Evento | Payload | Descrição |
-|---|---|---|
-| `host:join` | — | Mesa (Unity/Web) se registra como host |
-| `player:join` | `{ name, sessionId }` | Jogador entra (sessionId null = novo jogador) |
-| `card:play` | `{ cardId }` | Jogador joga uma carta da mão |
-
-### Servidor → Cliente
-
-| Evento | Payload | Descrição |
-|---|---|---|
-| `player:joined` | `{ sessionId, name }` | Confirmação de entrada (novo jogador) |
-| `player:rejoined` | `{ sessionId, name, hand }` | Confirmação de reconexão + estado da mão |
-| `lobby:state` | `{ players, status }` | Estado inicial enviado ao host |
-| `lobby:update` | `{ players, status }` | Atualização broadcast ao conectar/desconectar |
-| `hand:update` | `{ hand }` | Atualiza as cartas na mão do jogador |
-| `card:played` | `{ playerId, playerName, card }` | Notifica a Mesa que uma carta foi jogada |
+> Todos os dispositivos precisam estar na **mesma rede Wi-Fi**.
+> Node.js v18+ necessário.
 
 ---
 
-## Próximos Passos
+## Requisitos Não-Funcionais
 
-- [ ] **RF.05/06** — Telas de input de tema e ranking no celular
-- [ ] **RF.07/08** — Lógica de embaralhamento e distribuição de cartas
-- [ ] **RF.10/11** — Integração com Google Custom Search API + cache de imagens
-- [ ] **RF.12** — Shaders de estilização no Unity (Pintura a Óleo / Pixel Art)
-- [ ] **Integração Unity** — Conectar a engine como host via `SocketIOUnity` (C#)
-- [ ] **Pontuação** — Implementar mecânica de vazas e apostas
-- [ ] **Firewall** — Script de instalação com exceção automática no Windows
+| Requisito | Meta |
+|-----------|------|
+| Latência ação → tela | < 100ms (percepção instantânea) |
+| Jogadores simultâneos | 3 a 8 |
+| Orientação mobile | Portrait (retrato) |
+| Plataformas host | Windows x64 e Linux (Steam Deck) |
+| Consumo de API | Cache agressivo para não estourar cotas gratuitas |
+
+---
+
+## Riscos e Mitigações
+
+| Risco | Impacto | Mitigação |
+|-------|---------|-----------|
+| API de imagens paga / cota limitada | Alto | Cache local agressivo; placeholders artísticos como fallback |
+| Firewall do Windows bloqueando o servidor | Alto | Script instalador com exceção automática ou tutorial na primeira execução |
+| Imagens impróprias escapando do Safe Search | Médio | Safe Search strict na API; host pode banir imagem manualmente na Mesa |
+| Performance no Steam Deck | Baixo | Shaders são muito mais leves que IA generativa; meta é 60 FPS estável |

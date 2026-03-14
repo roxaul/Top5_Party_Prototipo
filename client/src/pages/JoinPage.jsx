@@ -11,7 +11,7 @@ export default function JoinPage({ onJoin, connected }) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-full px-6 py-12">
+    <div className="flex flex-col items-center justify-center min-h-svh px-6 py-12">
       {/* Logo / título */}
       <div className="mb-10 text-center">
         <div className="text-5xl mb-3">🎮</div>

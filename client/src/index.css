@@ -3,15 +3,28 @@
 @tailwind utilities;
 
 @layer base {
-  html, body, #root {
+  html {
+    /* height: 100% necessário para min-h-full funcionar nos filhos */
     height: 100%;
+    overflow-x: hidden;
+  }
+
+  body, #root {
+    min-height: 100%;
+    /* 100svh = "small viewport height": altura quando a barra do browser está visível.
+       Garante que o conteúdo nunca fique escondido atrás da barra de endereços
+       do iOS Safari ou Chrome Android. Suportado desde iOS 15.4 / Chrome 108. */
+    min-height: 100svh;
     background-color: #0f0f1a;
     color: #e2e8f0;
     font-family: 'Segoe UI', system-ui, sans-serif;
     -webkit-tap-highlight-color: transparent;
+    /* Impede pull-to-refresh acidental no Android ao deslizar cards */
+    overscroll-behavior-y: none;
   }
 
   * {
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }

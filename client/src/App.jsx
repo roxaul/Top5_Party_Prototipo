@@ -1,99 +1,54 @@
-import { useState, useEffect } from 'react';
-import socket from './socket';
-import JoinPage from './pages/JoinPage';
-import LobbyPage from './pages/LobbyPage';
-import HandPage from './pages/HandPage';
-
-const SESSION_KEY = 'top5party_session';
+import { useGameSocket } from './hooks/useSocket';
+import { SCREEN } from './constants/game';
+import JoinPage    from './pages/JoinPage';
+import LobbyPage   from './pages/LobbyPage';
+import ThemePage   from './pages/ThemePage';
+import RankingPage from './pages/RankingPage';
+import HandPage    from './pages/HandPage';
 
 export default function App() {
-  const [screen, setScreen] = useState('join');   // 'join' | 'lobby' | 'hand'
-  const [player, setPlayer] = useState(null);      // { sessionId, name }
-  const [lobbyState, setLobbyState] = useState({ players: [], status: 'lobby' });
-  const [hand, setHand] = useState([]);
-  const [connected, setConnected] = useState(false);
+  const {
+    screen, player, lobbyState, hand, connected, isHost,
+    joinGame, startGame, submitTheme, submitRanking, playCard,
+  } = useGameSocket();
 
-  // ── Conexão socket ────────────────────────────────────────────────────────
-  useEffect(() => {
-    socket.connect();
-
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
-
-    // Novo jogador confirmado
-    socket.on('player:joined', ({ sessionId, name }) => {
-      const data = { sessionId, name };
-      setPlayer(data);
-      localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-      setScreen('lobby');
-    });
-
-    // Reconexão confirmada (sessão restaurada)
-    socket.on('player:rejoined', ({ sessionId, name, hand: savedHand }) => {
-      const data = { sessionId, name };
-      setPlayer(data);
-      localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-      setHand(savedHand || []);
-      setScreen(savedHand?.length > 0 ? 'hand' : 'lobby');
-    });
-
-    // Atualização do lobby
-    socket.on('lobby:update', (state) => setLobbyState(state));
-
-    // Cartas recebidas
-    socket.on('hand:update', ({ hand: newHand }) => {
-      setHand(newHand);
-      if (newHand.length > 0) setScreen('hand');
-    });
-
-    return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('player:joined');
-      socket.off('player:rejoined');
-      socket.off('lobby:update');
-      socket.off('hand:update');
-    };
-  }, []);
-
-  // ── Tentativa de reconexão com sessão salva ───────────────────────────────
-  useEffect(() => {
-    if (!connected) return;
-
-    const saved = localStorage.getItem(SESSION_KEY);
-    if (saved) {
-      try {
-        const { sessionId, name } = JSON.parse(saved);
-        socket.emit('player:join', { name, sessionId });
-      } catch {
-        localStorage.removeItem(SESSION_KEY);
-      }
-    }
-  }, [connected]);
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
-  function handleJoin(name) {
-    localStorage.removeItem(SESSION_KEY); // garante sessão nova
-    socket.emit('player:join', { name, sessionId: null });
-  }
-
-  function handlePlayCard(cardId) {
-    socket.emit('card:play', { cardId });
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-full flex flex-col">
-      {/* Barra de status de conexão */}
+    <div className="min-h-svh flex flex-col">
       {!connected && (
         <div className="bg-red-600 text-white text-center text-xs py-1 font-semibold tracking-wide">
           Reconectando...
         </div>
       )}
 
-      {screen === 'join'  && <JoinPage onJoin={handleJoin} connected={connected} />}
-      {screen === 'lobby' && <LobbyPage player={player} lobbyState={lobbyState} />}
-      {screen === 'hand'  && <HandPage hand={hand} player={player} onPlayCard={handlePlayCard} />}
+      {screen === SCREEN.JOIN && (
+        <JoinPage onJoin={joinGame} connected={connected} />
+      )}
+      {screen === SCREEN.LOBBY && (
+        <LobbyPage
+          player={player}
+          lobbyState={lobbyState}
+          isHost={isHost}
+          onStartGame={startGame}
+        />
+      )}
+      {screen === SCREEN.THEME && (
+        <ThemePage
+          isHost={isHost}
+          lobbyState={lobbyState}
+          onSubmitTheme={submitTheme}
+        />
+      )}
+      {screen === SCREEN.RANKING && (
+        <RankingPage
+          theme={lobbyState.theme}
+          lobbyState={lobbyState}
+          mySessionId={player?.sessionId}
+          onSubmitRanking={submitRanking}
+        />
+      )}
+      {screen === SCREEN.HAND && (
+        <HandPage hand={hand} player={player} onPlayCard={playCard} />
+      )}
     </div>
   );
 }

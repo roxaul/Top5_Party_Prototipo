@@ -2,3 +2,7 @@ node_modules/
 client/dist/
 *.log
 .env
+
+# Claude Code
+CLAUDE.md
+.claude/
