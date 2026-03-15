@@ -4,19 +4,21 @@ import {
   GAME_STATUS, SCREEN, SOCKET_EVENTS, SESSION_KEY, INITIAL_LOBBY_STATE,
 } from '../constants/game';
 
-// sessionStorage (não localStorage): limpa ao fechar o browser/aba,
-// garantindo que o jogador sempre veja a tela de nome ao abrir o app.
-// Dentro da mesma sessão de aba, quedas de rede ainda reconectam automaticamente.
 const storage = sessionStorage;
 
 export function useGameSocket() {
-  const [screen, setScreen]         = useState(SCREEN.JOIN);
-  const [player, setPlayer]         = useState(null);
-  const [lobbyState, setLobbyState] = useState(INITIAL_LOBBY_STATE);
-  const [hand, setHand]             = useState([]);
-  const [connected, setConnected]   = useState(false);
+  const [screen, setScreen]             = useState(SCREEN.JOIN);
+  const [player, setPlayer]             = useState(null);
+  const [lobbyState, setLobbyState]     = useState(INITIAL_LOBBY_STATE);
+  const [hand, setHand]                 = useState([]);
+  const [connected, setConnected]       = useState(false);
+  const [roundResult, setRoundResult]   = useState(null);
+  const [gameOver, setGameOver]         = useState(null);
+  const [turnInfo, setTurnInfo]         = useState(null);
+  // Opções de tema personalizadas (3 únicas por jogador)
+  const [myThemeOptions, setMyThemeOptions] = useState([]);
+  const [mySelectedTheme, setMySelectedTheme] = useState(null);
 
-  // ── Listeners de socket ────────────────────────────────────────────────────
   useEffect(() => {
     socket.connect();
 
@@ -30,26 +32,35 @@ export function useGameSocket() {
       setScreen(SCREEN.LOBBY);
     });
 
-    socket.on(SOCKET_EVENTS.PLAYER_REJOINED, ({ sessionId, name, hand: savedHand, lobbyState: ls }) => {
+    socket.on(SOCKET_EVENTS.PLAYER_REJOINED, ({
+      sessionId, name, hand: savedHand, lobbyState: ls,
+      themeOptions, selectedTheme,
+    }) => {
       const data = { sessionId, name };
       setPlayer(data);
       storage.setItem(SESSION_KEY, JSON.stringify(data));
       setHand(savedHand || []);
       if (ls) setLobbyState(ls);
+      if (themeOptions?.length)  setMyThemeOptions(themeOptions);
+      if (selectedTheme)         setMySelectedTheme(selectedTheme);
 
-      // Redireciona para a tela correta conforme a fase salva
       const status = ls?.status ?? GAME_STATUS.LOBBY;
-      if (savedHand?.length > 0 || status === GAME_STATUS.PLAYING)  setScreen(SCREEN.HAND);
-      else if (status === GAME_STATUS.RANKING_INPUT)                 setScreen(SCREEN.RANKING);
-      else if (status === GAME_STATUS.THEME_INPUT)                   setScreen(SCREEN.THEME);
-      else                                                            setScreen(SCREEN.LOBBY);
+      if      (status === GAME_STATUS.GAME_OVER)    setScreen(SCREEN.GAME_OVER);
+      else if (status === GAME_STATUS.ROUND_RESULT) setScreen(SCREEN.ROUND_RESULT);
+      else if (savedHand?.length > 0 || status === GAME_STATUS.PLAYING) setScreen(SCREEN.HAND);
+      else if (status === GAME_STATUS.RANKING_INPUT) setScreen(SCREEN.RANKING);
+      else if (status === GAME_STATUS.THEME_SELECT)  setScreen(SCREEN.THEME_SELECT);
+      else                                           setScreen(SCREEN.LOBBY);
     });
 
     socket.on(SOCKET_EVENTS.LOBBY_UPDATE, (state) => setLobbyState(state));
 
-    socket.on(SOCKET_EVENTS.PHASE_THEME_INPUT, (state) => {
-      setLobbyState(state);
-      setScreen(SCREEN.THEME);
+    // phase:theme-select chega com opções personalizadas
+    socket.on(SOCKET_EVENTS.PHASE_THEME_SELECT, ({ options, lobbyState: ls }) => {
+      setMyThemeOptions(options ?? []);
+      setMySelectedTheme(null);
+      if (ls) setLobbyState(ls);
+      setScreen(SCREEN.THEME_SELECT);
     });
 
     socket.on(SOCKET_EVENTS.PHASE_RANKING_INPUT, (state) => {
@@ -57,11 +68,32 @@ export function useGameSocket() {
       setScreen(SCREEN.RANKING);
     });
 
-    socket.on(SOCKET_EVENTS.GAME_STARTED, (state) => setLobbyState(state));
+    socket.on(SOCKET_EVENTS.GAME_STARTED, (state) => {
+      setLobbyState(state);
+      setRoundResult(null);
+      setScreen(SCREEN.HAND);
+    });
+
+    socket.on(SOCKET_EVENTS.PHASE_PLAYING, (state) => {
+      setLobbyState(state);
+      setRoundResult(null);
+      setScreen(SCREEN.HAND);
+    });
+
+    socket.on(SOCKET_EVENTS.TURN_UPDATE, (info) => setTurnInfo(info));
 
     socket.on(SOCKET_EVENTS.HAND_UPDATE, ({ hand: newHand }) => {
       setHand(newHand);
-      if (newHand.length > 0) setScreen(SCREEN.HAND);
+    });
+
+    socket.on(SOCKET_EVENTS.PHASE_ROUND_RESULT, (result) => {
+      setRoundResult(result);
+      setScreen(SCREEN.ROUND_RESULT);
+    });
+
+    socket.on(SOCKET_EVENTS.PHASE_GAME_OVER, (result) => {
+      setGameOver(result);
+      setScreen(SCREEN.GAME_OVER);
     });
 
     socket.on(SOCKET_EVENTS.ROOM_RESET, () => {
@@ -69,20 +101,28 @@ export function useGameSocket() {
       setPlayer(null);
       setLobbyState(INITIAL_LOBBY_STATE);
       setHand([]);
+      setRoundResult(null);
+      setGameOver(null);
+      setTurnInfo(null);
+      setMyThemeOptions([]);
+      setMySelectedTheme(null);
       setScreen(SCREEN.JOIN);
     });
 
     return () => {
-      ['connect', 'disconnect',
-        SOCKET_EVENTS.PLAYER_JOINED, SOCKET_EVENTS.PLAYER_REJOINED,
-        SOCKET_EVENTS.LOBBY_UPDATE,  SOCKET_EVENTS.PHASE_THEME_INPUT,
+      [
+        'connect', 'disconnect',
+        SOCKET_EVENTS.PLAYER_JOINED,      SOCKET_EVENTS.PLAYER_REJOINED,
+        SOCKET_EVENTS.LOBBY_UPDATE,       SOCKET_EVENTS.PHASE_THEME_SELECT,
         SOCKET_EVENTS.PHASE_RANKING_INPUT, SOCKET_EVENTS.GAME_STARTED,
-        SOCKET_EVENTS.HAND_UPDATE,   SOCKET_EVENTS.ROOM_RESET,
+        SOCKET_EVENTS.PHASE_PLAYING,      SOCKET_EVENTS.TURN_UPDATE,
+        SOCKET_EVENTS.HAND_UPDATE,        SOCKET_EVENTS.PHASE_ROUND_RESULT,
+        SOCKET_EVENTS.PHASE_GAME_OVER,    SOCKET_EVENTS.ROOM_RESET,
       ].forEach((ev) => socket.off(ev));
     };
   }, []);
 
-  // ── Reconexão automática com sessão da aba atual (queda de rede) ───────────
+  // Reconexão automática (queda de rede)
   useEffect(() => {
     if (!connected) return;
     const saved = storage.getItem(SESSION_KEY);
@@ -95,21 +135,29 @@ export function useGameSocket() {
     }
   }, [connected]);
 
-  // ── Ações ─────────────────────────────────────────────────────────────────
+  // Ações
   function joinGame(name) {
     storage.removeItem(SESSION_KEY);
     socket.emit(SOCKET_EVENTS.PLAYER_JOIN, { name, sessionId: null });
   }
 
   function startGame()          { socket.emit(SOCKET_EVENTS.GAME_START); }
-  function submitTheme(theme)   { socket.emit(SOCKET_EVENTS.THEME_SUBMIT,   { theme }); }
+
+  function selectTheme(theme) {
+    setMySelectedTheme(theme);
+    socket.emit(SOCKET_EVENTS.THEME_SELECT, { theme });
+  }
+
   function submitRanking(items) { socket.emit(SOCKET_EVENTS.RANKING_SUBMIT, { items }); }
   function playCard(cardId)     { socket.emit(SOCKET_EVENTS.CARD_PLAY,      { cardId }); }
 
-  const isHost = player?.sessionId === lobbyState.hostPlayerId;
+  const isHost   = player?.sessionId === lobbyState.hostPlayerId;
+  const isMyTurn = turnInfo?.currentTurn === player?.sessionId;
 
   return {
     screen, player, lobbyState, hand, connected, isHost,
-    joinGame, startGame, submitTheme, submitRanking, playCard,
+    roundResult, gameOver, turnInfo, isMyTurn,
+    myThemeOptions, mySelectedTheme,
+    joinGame, startGame, selectTheme, submitRanking, playCard,
   };
 }

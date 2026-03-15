@@ -2,10 +2,10 @@ import WaitingDots from '../components/WaitingDots';
 import { GAME_STATUS } from '../constants/game';
 
 const HOW_TO_PLAY = [
-  { icon: '🎯', text: 'O host escolhe um tema' },
-  { icon: '✍️', text: 'Você monta seu Top 5' },
+  { icon: '🗳️', text: 'Vote no tema da rodada' },
+  { icon: '✍️', text: 'Monte seu Top 5 do tema' },
   { icon: '🃏', text: 'Suas respostas viram cartas' },
-  { icon: '🎮', text: 'Jogue cartas na mesa!' },
+  { icon: '🎮', text: 'Jogue em turnos na mesa!' },
 ];
 
 export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {

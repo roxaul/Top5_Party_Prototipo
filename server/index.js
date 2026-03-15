@@ -21,9 +21,7 @@ function getLocalIP() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
     }
   }
   return 'localhost';
@@ -42,23 +40,93 @@ function shuffled(arr) {
   return a;
 }
 
+// ─── Pool de perguntas/temas ──────────────────────────────────────────────────
+
+const THEME_POOL = [
+  'Top 5 Filmes de Terror',
+  'Top 5 Comidas do Verão',
+  'Top 5 Séries da Netflix',
+  'Top 5 Músicas para Festa',
+  'Top 5 Destinos de Viagem',
+  'Top 5 Super-Heróis',
+  'Top 5 Jogos de Video Game',
+  'Top 5 Sobremesas',
+  'Top 5 Animais Fofos',
+  'Top 5 Músicas dos Anos 90',
+  'Top 5 Personagens de Anime',
+  'Top 5 Filmes de Ação',
+  'Top 5 Comidas Italianas',
+  'Top 5 Jogos de Tabuleiro',
+  'Top 5 Apps no Celular',
+  'Top 5 Países para Visitar',
+  'Top 5 Heróis Brasileiros',
+  'Top 5 Sabores de Sorvete',
+  'Top 5 Séries de Anime',
+  'Top 5 Filmes de Comédia',
+  'Top 5 Bandas de Rock',
+  'Top 5 Esportes Radicais',
+  'Top 5 Pratos do Churrasco',
+  'Top 5 Filmes Românticos',
+  'Top 5 Coisas para Fazer no Fim de Semana',
+  'Top 5 Coisas Assustadoras',
+  'Top 5 Personagens de Disney',
+  'Top 5 Vilões de Filmes',
+  'Top 5 Músicas Brasileiras',
+  'Top 5 Invenções Incríveis',
+];
+
+/**
+ * Distribui 3 perguntas exclusivas por jogador (sem repetição entre jogadores,
+ * se o pool for grande o suficiente).
+ * Retorna Map<sessionId, string[]>
+ */
+function assignThemeOptions(playerIds) {
+  const pool = shuffled([...THEME_POOL]);
+  const result = new Map();
+  let idx = 0;
+  for (const sid of playerIds) {
+    // Garante 3 opções por jogador; repete o pool se necessário
+    const opts = [];
+    for (let k = 0; k < 3; k++) {
+      opts.push(pool[idx % pool.length]);
+      idx++;
+    }
+    result.set(sid, opts);
+  }
+  return result;
+}
+
 // ─── Estado do Jogo ────────────────────────────────────────────────────────────
 //
-// sessions : Map<sessionId, { name, socketId, hand: Card[], connected }>
-// cardMeta : Map<cardId, { owner: sessionId, rank: 1-5, text, theme }>
-//            (metadados ocultos — nunca enviados ao cliente durante o jogo)
-// lobby.rankings : Map<sessionId, string[]>  (itens em ordem, índice 0 = favorito)
+// sessions  : Map<sessionId, { name, socketId, hand: Card[], connected }>
+// cardMeta  : Map<cardId, { owner: sessionId, ownerName, rank: 1-5, text, theme }>
+//             (rank é oculto — nunca enviado ao cliente durante o jogo)
+//
+// Formato de carta pública (enviada ao cliente):
+// { id, text, theme, playerName }   — JSON pronto para persistência
+//
+// Formato completo (para banco/cache):
+// { id, text, theme, playerName, rank }   — gerado via buildCardRecord()
 
 const sessions = new Map();
 const cardMeta = new Map();
 
 const lobby = {
-  players: [],        // lista pública
-  hostSocketId: null, // socket do PC/Mesa
-  hostPlayerId: null, // sessionId do primeiro jogador mobile (pode iniciar)
-  status: 'lobby',    // 'lobby' | 'theme-input' | 'ranking-input' | 'playing'
-  theme: null,        // tema da rodada
-  rankings: new Map(),// sessionId -> string[5]
+  players:            [],
+  hostSocketId:       null,
+  hostPlayerId:       null,
+  // 'lobby' | 'theme-select' | 'ranking-input' | 'playing' | 'round-result' | 'game-over'
+  status:             'lobby',
+  playerThemeOptions: new Map(), // sessionId → string[3]  (opções personalizadas)
+  selectedThemes:     new Map(), // sessionId → string     (tema escolhido)
+  rankings:           new Map(), // sessionId → string[5]
+  // fase de jogo
+  turnOrder:          [],
+  currentTurn:        null,
+  roundCards:         new Map(), // sessionId → { card, meta }
+  scores:             new Map(), // sessionId → number
+  roundNumber:        0,
+  totalRounds:        0,
 };
 
 function connectedPlayers() {
@@ -71,15 +139,21 @@ function getLobbyState() {
       sessionId,
       name,
       connected,
-      isHost: sessionId === lobby.hostPlayerId,
+      isHost:          sessionId === lobby.hostPlayerId,
       submittedRanking: lobby.rankings.has(sessionId),
+      selectedTheme:   lobby.selectedThemes.has(sessionId),
+      score:           lobby.scores.get(sessionId) ?? 0,
     })),
-    status: lobby.status,
-    playerCount: lobby.players.length,
-    hostPlayerId: lobby.hostPlayerId,
-    theme: lobby.theme,
-    rankingsSubmitted: lobby.rankings.size,
-    rankingsTotal: connectedPlayers().length,
+    status:             lobby.status,
+    playerCount:        lobby.players.length,
+    hostPlayerId:       lobby.hostPlayerId,
+    themeSelectsCount:  lobby.selectedThemes.size,
+    rankingsSubmitted:  lobby.rankings.size,
+    rankingsTotal:      connectedPlayers().length,
+    currentTurn:        lobby.currentTurn,
+    roundNumber:        lobby.roundNumber,
+    totalRounds:        lobby.totalRounds,
+    scores:             Object.fromEntries(lobby.scores),
   };
 }
 
@@ -87,51 +161,67 @@ function broadcastLobbyUpdate() {
   io.emit('lobby:update', getLobbyState());
 }
 
-// Se o host atual desconectou, passa para o próximo jogador conectado
-// (em ordem de entrada). Reconexão NÃO devolve o host.
 function reassignHostIfNeeded(disconnectedSid) {
   if (lobby.hostPlayerId !== disconnectedSid) return;
   const next = lobby.players.find((p) => p.connected && p.sessionId !== disconnectedSid);
   lobby.hostPlayerId = next ? next.sessionId : null;
-  if (next) {
-    console.log(`[HOST] Host automático → ${next.name}`);
-  } else {
-    console.log('[HOST] Sem jogadores online — host vazio');
-  }
+  console.log(next ? `[HOST] Host automático → ${next.name}` : '[HOST] Sem jogadores online');
 }
 
 function resetRoom() {
   sessions.clear();
   cardMeta.clear();
-  lobby.players     = [];
-  lobby.hostPlayerId = null;
-  lobby.status      = 'lobby';
-  lobby.theme       = null;
+  lobby.players             = [];
+  lobby.hostPlayerId        = null;
+  lobby.status              = 'lobby';
+  lobby.playerThemeOptions.clear();
+  lobby.selectedThemes.clear();
   lobby.rankings.clear();
-  // hostSocketId mantido — a Mesa continua conectada
+  lobby.turnOrder           = [];
+  lobby.currentTurn         = null;
+  lobby.roundCards.clear();
+  lobby.scores.clear();
+  lobby.roundNumber         = 0;
+  lobby.totalRounds         = 0;
 }
 
-// ─── Montagem e distribuição do baralho ───────────────────────────────────────
+// ─── Montagem do baralho ──────────────────────────────────────────────────────
+//
+// Cada carta no formato JSON adequado para persistência:
+// { id, text, theme, playerName, rank }
+// "rank" fica em cardMeta (oculto durante o jogo).
+
+function buildPublicCard(id, text, theme, playerName) {
+  return { id, text, theme, playerName };
+}
 
 function startPlaying() {
   lobby.status = 'playing';
   cardMeta.clear();
+  lobby.scores.clear();
+  lobby.roundNumber = 0;
+  lobby.roundCards.clear();
 
-  // Monta todas as cartas a partir dos rankings
-  // índice 0 = favorito (rank 5) … índice 4 = menos favorito (rank 1)
   const allCards = [];
   for (const [sid, items] of lobby.rankings.entries()) {
+    const playerName = sessions.get(sid)?.name ?? '?';
+    const theme      = lobby.selectedThemes.get(sid) ?? '?';
+
     items.forEach((text, index) => {
-      const rank = 5 - index;
-      const id = generateId();
-      cardMeta.set(id, { owner: sid, rank, text, theme: lobby.theme });
-      allCards.push({ id, text, theme: lobby.theme }); // versão pública (sem rank/owner)
+      const rank = 5 - index; // índice 0 = favorito → rank 5
+      const id   = generateId();
+      cardMeta.set(id, { owner: sid, ownerName: playerName, rank, text, theme });
+      allCards.push(buildPublicCard(id, text, theme, playerName));
     });
   }
 
-  const deck = shuffled(allCards);
+  const deck    = shuffled(allCards);
   const players = connectedPlayers();
   const cardsPerPlayer = Math.floor(deck.length / players.length);
+
+  lobby.totalRounds = cardsPerPlayer;
+  lobby.turnOrder   = players.map((p) => p.sessionId);
+  players.forEach((p) => lobby.scores.set(p.sessionId, 0));
 
   players.forEach((player, i) => {
     const session = sessions.get(player.sessionId);
@@ -141,25 +231,130 @@ function startPlaying() {
     io.to(session.socketId).emit('hand:update', { hand });
   });
 
-  console.log(`[GAME] Partida iniciada! ${allCards.length} cartas para ${players.length} jogadores.`);
+  lobby.currentTurn = lobby.turnOrder[0];
+
+  console.log(`[GAME] ${allCards.length} cartas, ${cardsPerPlayer} rodadas, ${players.length} jogadores`);
   io.emit('game:started', getLobbyState());
+  io.emit('turn:update', {
+    currentTurn: lobby.currentTurn,
+    roundNumber:  lobby.roundNumber + 1,
+    totalRounds:  lobby.totalRounds,
+  });
+}
+
+// ─── Fim de rodada ─────────────────────────────────────────────────────────────
+
+function endRound() {
+  let winner  = null;
+  let maxRank = -1;
+
+  for (const [sid, { meta }] of lobby.roundCards.entries()) {
+    if (meta.rank > maxRank) { maxRank = meta.rank; winner = sid; }
+  }
+
+  if (winner) lobby.scores.set(winner, (lobby.scores.get(winner) || 0) + 1);
+
+  const roundResult = {
+    roundNumber: lobby.roundNumber + 1,
+    totalRounds: lobby.totalRounds,
+    // Cada entrada em formato JSON completo (pronto para persistência)
+    cards: Array.from(lobby.roundCards.entries()).map(([sid, { card, meta }]) => ({
+      id:         card.id,
+      text:       card.text,
+      theme:      card.theme,
+      playerName: card.playerName,
+      rank:       meta.rank,       // revelado ao fim da rodada
+      playedBy:   sid,
+    })),
+    winner: winner
+      ? { sessionId: winner, name: sessions.get(winner)?.name ?? '?' }
+      : null,
+    scores:      Object.fromEntries(lobby.scores),
+    playerNames: Object.fromEntries(
+      Array.from(sessions.entries()).map(([sid, s]) => [sid, s.name])
+    ),
+  };
+
+  lobby.roundNumber++;
+  lobby.roundCards.clear();
+  lobby.status = 'round-result';
+
+  io.emit('phase:round-result', roundResult);
+
+  setTimeout(() => {
+    if (lobby.status !== 'round-result') return;
+    if (lobby.roundNumber >= lobby.totalRounds) endGame();
+    else startNextRound();
+  }, 5000);
+}
+
+function startNextRound() {
+  lobby.status      = 'playing';
+  lobby.currentTurn = lobby.turnOrder[0];
+  io.emit('phase:playing', getLobbyState());
+  io.emit('turn:update', {
+    currentTurn: lobby.currentTurn,
+    roundNumber:  lobby.roundNumber + 1,
+    totalRounds:  lobby.totalRounds,
+  });
+}
+
+function endGame() {
+  lobby.status = 'game-over';
+  let topScore = -1, topPlayer = null;
+  for (const [sid, score] of lobby.scores.entries()) {
+    if (score > topScore) { topScore = score; topPlayer = sid; }
+  }
+
+  io.emit('phase:game-over', {
+    scores: lobby.turnOrder.map((sid) => ({
+      sessionId: sid,
+      name:      sessions.get(sid)?.name ?? '?',
+      score:     lobby.scores.get(sid) || 0,
+      isWinner:  sid === topPlayer,
+    })).sort((a, b) => b.score - a.score),
+    winner: topPlayer
+      ? { sessionId: topPlayer, name: sessions.get(topPlayer)?.name ?? '?', score: topScore }
+      : null,
+  });
+}
+
+// ─── Avança turno (pula desconectados) ────────────────────────────────────────
+
+function advanceTurn(currentSid) {
+  const currentIndex = lobby.turnOrder.indexOf(currentSid);
+  let ni = currentIndex + 1;
+  while (ni < lobby.turnOrder.length) {
+    const p = lobby.players.find((x) => x.sessionId === lobby.turnOrder[ni]);
+    if (p?.connected) break;
+    ni++;
+  }
+  if (ni < lobby.turnOrder.length) {
+    lobby.currentTurn = lobby.turnOrder[ni];
+    io.emit('turn:update', {
+      currentTurn: lobby.currentTurn,
+      roundNumber:  lobby.roundNumber + 1,
+      totalRounds:  lobby.totalRounds,
+    });
+  } else {
+    endRound();
+  }
 }
 
 // ─── Rotas HTTP ────────────────────────────────────────────────────────────────
 
 app.get('/qr', async (_req, res) => {
-  const ip = getLocalIP();
+  const ip  = getLocalIP();
   const url = `http://${ip}:${PORT}`;
   try {
     const png = await QRCode.toBuffer(url, { width: 300, margin: 2 });
     res.setHeader('Content-Type', 'image/png');
     res.send(png);
-  } catch (err) {
+  } catch {
     res.status(500).send('Erro ao gerar QR Code');
   }
 });
 
-// /mesa é rota do React SPA (tratada pelo front-end)
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDist));
 app.get('*', (req, res) => {
@@ -172,7 +367,7 @@ app.get('*', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[+] Conectado: ${socket.id}`);
 
-  // ── Mesa / Host (PC ou Unity) ─────────────────────────────────────────────
+  // ── Mesa / Host ───────────────────────────────────────────────────────────
   socket.on('host:join', () => {
     lobby.hostSocketId = socket.id;
     socket.join('host');
@@ -185,40 +380,30 @@ io.on('connection', (socket) => {
     let sid = sessionId;
 
     if (sid && sessions.has(sid)) {
-      // Reconexão
       const session = sessions.get(sid);
-      session.socketId = socket.id;
+      session.socketId  = socket.id;
       session.connected = true;
-
       const player = lobby.players.find((p) => p.sessionId === sid);
-      if (player) {
-        player.connected = true;
-        player.name = session.name;
-      }
-
-      console.log(`[RECONEXÃO] ${session.name} (${sid})`);
+      if (player) { player.connected = true; player.name = session.name; }
       socket.data.sessionId = sid;
       socket.join('players');
-
       socket.emit('player:rejoined', {
         sessionId: sid,
-        name: session.name,
-        hand: session.hand,
+        name:      session.name,
+        hand:      session.hand,
         lobbyState: getLobbyState(),
+        // Reenvia opções pessoais de tema (caso ainda esteja nessa fase)
+        themeOptions: lobby.playerThemeOptions.get(sid) ?? [],
+        selectedTheme: lobby.selectedThemes.get(sid) ?? null,
       });
+      console.log(`[RECONEXÃO] ${session.name}`);
     } else {
-      // Novo jogador
       sid = generateId();
       const sanitizedName = String(name || 'Jogador').slice(0, 24).trim() || 'Jogador';
-
-      if (lobby.hostPlayerId === null) {
-        lobby.hostPlayerId = sid; // sem host na sala → este jogador vira host
-      }
-
+      if (lobby.hostPlayerId === null) lobby.hostPlayerId = sid;
       sessions.set(sid, { name: sanitizedName, socketId: socket.id, hand: [], connected: true });
       lobby.players.push({ sessionId: sid, name: sanitizedName, connected: true });
       console.log(`[JOIN] ${sanitizedName} (${sid})${lobby.hostPlayerId === sid ? ' [HOST]' : ''}`);
-
       socket.data.sessionId = sid;
       socket.join('players');
       socket.emit('player:joined', { sessionId: sid, name: sanitizedName });
@@ -227,35 +412,58 @@ io.on('connection', (socket) => {
     broadcastLobbyUpdate();
   });
 
-  // ── Host inicia → fase de escolha de tema ─────────────────────────────────
+  // ── Host inicia → seleção individual de tema ──────────────────────────────
   socket.on('game:start', () => {
     const sid = socket.data.sessionId;
     if (sid !== lobby.hostPlayerId) return;
     if (lobby.status !== 'lobby') return;
 
-    lobby.status = 'theme-input';
-    lobby.theme = null;
-    lobby.rankings.clear();
+    lobby.status = 'theme-select';
+    lobby.playerThemeOptions.clear();
+    lobby.selectedThemes.clear();
 
-    console.log('[GAME] Fase: escolha de tema');
-    io.emit('phase:theme-input', getLobbyState());
+    // Distribui 3 perguntas únicas por jogador
+    const players = connectedPlayers();
+    const optionsMap = assignThemeOptions(players.map((p) => p.sessionId));
+    for (const [psid, opts] of optionsMap) {
+      lobby.playerThemeOptions.set(psid, opts);
+    }
+
+    // Notifica cada jogador com suas opções pessoais
+    for (const player of players) {
+      const session = sessions.get(player.sessionId);
+      if (!session) continue;
+      io.to(session.socketId).emit('phase:theme-select', {
+        options:    lobby.playerThemeOptions.get(player.sessionId),
+        lobbyState: getLobbyState(),
+      });
+    }
+    // Notifica a Mesa
+    io.to('host').emit('phase:theme-select', getLobbyState());
+
+    console.log('[GAME] Fase: seleção individual de tema');
   });
 
-  // ── Host submete o tema → fase de ranking ─────────────────────────────────
-  socket.on('theme:submit', ({ theme }) => {
+  // ── Jogador seleciona o próprio tema ──────────────────────────────────────
+  socket.on('theme:select', ({ theme }) => {
     const sid = socket.data.sessionId;
-    if (sid !== lobby.hostPlayerId) return;
-    if (lobby.status !== 'theme-input') return;
+    if (!sid || !sessions.has(sid)) return;
+    if (lobby.status !== 'theme-select') return;
+    if (lobby.selectedThemes.has(sid)) return;
 
-    const sanitized = String(theme || '').slice(0, 80).trim();
-    if (!sanitized) return;
+    const opts = lobby.playerThemeOptions.get(sid) ?? [];
+    if (!opts.includes(theme)) return; // tema inválido (não estava nas opções)
 
-    lobby.theme = sanitized;
-    lobby.status = 'ranking-input';
-    lobby.rankings.clear();
+    lobby.selectedThemes.set(sid, theme);
+    console.log(`[TEMA] ${sessions.get(sid).name} escolheu: "${theme}"`);
+    broadcastLobbyUpdate();
 
-    console.log(`[GAME] Tema definido: "${lobby.theme}"`);
-    io.emit('phase:ranking-input', getLobbyState());
+    if (lobby.selectedThemes.size >= connectedPlayers().length) {
+      lobby.status = 'ranking-input';
+      lobby.rankings.clear();
+      console.log('[GAME] Todos escolheram tema → ranking-input');
+      io.emit('phase:ranking-input', getLobbyState());
+    }
   });
 
   // ── Jogador submete seu Top 5 ─────────────────────────────────────────────
@@ -263,63 +471,63 @@ io.on('connection', (socket) => {
     const sid = socket.data.sessionId;
     if (!sid || !sessions.has(sid)) return;
     if (lobby.status !== 'ranking-input') return;
-    if (lobby.rankings.has(sid)) return; // já submeteu
-
+    if (lobby.rankings.has(sid)) return;
     if (!Array.isArray(items) || items.length !== 5) return;
+
     const sanitized = items.map((t) => String(t || '').slice(0, 60).trim());
-    if (sanitized.some((t) => t === '')) return; // todos os campos obrigatórios
+    if (sanitized.some((t) => t === '')) return;
 
     lobby.rankings.set(sid, sanitized);
     console.log(`[RANKING] ${sessions.get(sid).name} submeteu Top 5`);
+    broadcastLobbyUpdate();
 
-    broadcastLobbyUpdate(); // atualiza rankingsSubmitted para todos
-
-    // Se todos os jogadores conectados submeteram, inicia o jogo
-    if (lobby.rankings.size >= connectedPlayers().length) {
-      startPlaying();
-    }
+    if (lobby.rankings.size >= connectedPlayers().length) startPlaying();
   });
 
   // ── Jogador joga uma carta na mesa ────────────────────────────────────────
   socket.on('card:play', ({ cardId }) => {
     const sid = socket.data.sessionId;
     if (!sid || !sessions.has(sid)) return;
+    if (lobby.status !== 'playing') return;
+    if (sid !== lobby.currentTurn) return;
 
-    const session = sessions.get(sid);
+    const session  = sessions.get(sid);
     const cardIndex = session.hand.findIndex((c) => c.id === cardId);
     if (cardIndex === -1) return;
 
     const [card] = session.hand.splice(cardIndex, 1);
-    const meta = cardMeta.get(card.id) || {};
-    console.log(`[CARTA] ${session.name} jogou: ${card.text}`);
+    const meta   = cardMeta.get(card.id) || {};
+    lobby.roundCards.set(sid, { card, meta });
+
+    console.log(`[CARTA] ${session.name} jogou: "${card.text}" (${card.theme}) rank=${meta.rank}`);
 
     io.to('host').emit('card:played', {
-      playerId: sid,
+      playerId:   sid,
       playerName: session.name,
-      card,
-      // metadados ocultos — visíveis apenas na revelação
-      _meta: meta,
+      card,        // inclui text, theme, playerName
+      _meta:       meta, // rank revelado apenas na Mesa
     });
 
     socket.emit('hand:update', { hand: session.hand });
+    advanceTurn(sid);
   });
 
-  // ── Mesa transfere o host para outro jogador ──────────────────────────────
+  // ── Mesa transfere o host ─────────────────────────────────────────────────
   socket.on('host:transfer', ({ sessionId }) => {
-    if (socket.id !== lobby.hostSocketId) return; // só a Mesa pode fazer isso
+    if (socket.id !== lobby.hostSocketId) return;
     if (!sessions.has(sessionId)) return;
     lobby.hostPlayerId = sessionId;
-    console.log(`[HOST] Host transferido para ${sessions.get(sessionId).name}`);
+    console.log(`[HOST] Transferido para ${sessions.get(sessionId).name}`);
     broadcastLobbyUpdate();
   });
 
   // ── Mesa reseta a sala ────────────────────────────────────────────────────
   socket.on('room:reset', () => {
-    if (socket.id !== lobby.hostSocketId) return; // só a Mesa pode resetar
+    if (socket.id !== lobby.hostSocketId) return;
     resetRoom();
-    console.log('[RESET] Sala resetada pela Mesa');
-    io.emit('room:reset');                  // notifica todos os clientes
-    socket.emit('lobby:state', getLobbyState()); // devolve estado vazio para a Mesa
+    console.log('[RESET] Sala resetada');
+    io.emit('room:reset');
+    socket.emit('lobby:state', getLobbyState());
   });
 
   // ── Desconexão ────────────────────────────────────────────────────────────
@@ -329,19 +537,25 @@ io.on('connection', (socket) => {
     if (sid && sessions.has(sid)) {
       const session = sessions.get(sid);
       session.connected = false;
-
       const player = lobby.players.find((p) => p.sessionId === sid);
       if (player) player.connected = false;
 
       reassignHostIfNeeded(sid);
 
-      // Se estava em ranking-input e todos os restantes já submeteram, avança
+      if (lobby.status === 'playing' && lobby.currentTurn === sid) {
+        console.log(`[TURNO] ${session.name} desconectou no seu turno — avançando`);
+        advanceTurn(sid);
+      }
       if (lobby.status === 'ranking-input' && lobby.rankings.size >= connectedPlayers().length) {
         startPlaying();
-      } else {
-        broadcastLobbyUpdate();
+      }
+      if (lobby.status === 'theme-select' && lobby.selectedThemes.size >= connectedPlayers().length) {
+        lobby.status = 'ranking-input';
+        lobby.rankings.clear();
+        io.emit('phase:ranking-input', getLobbyState());
       }
 
+      broadcastLobbyUpdate();
       console.log(`[-] ${session.name} desconectado (${reason})`);
     } else if (socket.id === lobby.hostSocketId) {
       lobby.hostSocketId = null;
@@ -353,7 +567,7 @@ io.on('connection', (socket) => {
 // ─── Start ─────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, '0.0.0.0', async () => {
-  const ip = getLocalIP();
+  const ip  = getLocalIP();
   const url = `http://${ip}:${PORT}`;
 
   console.log('\n╔══════════════════════════════════════╗');
@@ -369,7 +583,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     const qr = await QRCode.toString(url, { type: 'terminal', small: true });
     console.log('\nEscaneie para conectar:\n');
     console.log(qr);
-  } catch (e) {
+  } catch {
     console.log(`\nAcesse: ${url}\n`);
   }
 });

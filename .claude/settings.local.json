@@ -8,7 +8,9 @@
       "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
       "Bash(npm --version)",
       "Bash(npm run:*)",
-      "Bash(timeout 5 node index.js)"
+      "Bash(timeout 5 node index.js)",
+      "Bash(ls c:gitExercicio_conex-oCelular*.md)",
+      "Bash(ls \"c:/git/Exercicio_conex-oCelular/\"*.md)"
     ]
   }
 }
