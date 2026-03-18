@@ -14,7 +14,7 @@ export default function JoinPage({ onJoin, connected }) {
     <div className="flex flex-col items-center justify-center min-h-svh px-6 py-12">
       {/* Logo / título */}
       <div className="mb-10 text-center">
-        <div className="text-5xl mb-3">🎮</div>
+        <div className="w-14 h-1.5 bg-gradient-to-r from-party-purple to-party-violet rounded-full mx-auto mb-5" />
         <h1 className="text-3xl font-bold text-party-violet tracking-tight">Top 5 Party</h1>
         <p className="text-slate-400 text-sm mt-2">O jogo das preferências</p>
       </div>

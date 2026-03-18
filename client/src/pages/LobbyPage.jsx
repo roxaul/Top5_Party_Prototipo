@@ -2,10 +2,10 @@ import WaitingDots from '../components/WaitingDots';
 import { GAME_STATUS } from '../constants/game';
 
 const HOW_TO_PLAY = [
-  { icon: '🗳️', text: 'Vote no tema da rodada' },
-  { icon: '✍️', text: 'Monte seu Top 5 do tema' },
-  { icon: '🃏', text: 'Suas respostas viram cartas' },
-  { icon: '🎮', text: 'Jogue em turnos na mesa!' },
+  { step: '01', text: 'Escolha um tema de pergunta' },
+  { step: '02', text: 'Monte seu Top 5 com respostas' },
+  { step: '03', text: 'Suas respostas viram cartas' },
+  { step: '04', text: 'Jogue em turnos na mesa' },
 ];
 
 export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {
@@ -17,14 +17,14 @@ export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {
     <div className="flex flex-col min-h-svh px-6 pt-8 pb-4-safe">
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="text-4xl mb-2">🃏</div>
+        <div className="w-10 h-1 bg-gradient-to-r from-party-purple to-party-violet rounded-full mx-auto mb-4" />
         <h2 className="text-xl font-bold text-party-violet">Sala de Espera</h2>
         <p className="text-slate-400 text-sm mt-1">
           Olá,{' '}
           <span className="text-white font-semibold">{player?.name}</span>
           {isHost && (
-            <span className="ml-2 text-xs bg-party-purple/30 text-party-violet px-2 py-0.5 rounded-full">
-              👑 Host
+            <span className="ml-2 text-xs bg-party-purple/30 text-party-violet px-2 py-0.5 rounded-full font-semibold">
+              Host
             </span>
           )}
           !
@@ -58,8 +58,8 @@ export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {
                 )}
               </span>
               {p.isHost && (
-                <span className="text-xs bg-party-purple/20 text-party-violet px-1.5 py-0.5 rounded-full">
-                  👑
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-party-purple/20 text-party-violet px-2 py-0.5 rounded-full">
+                  Host
                 </span>
               )}
             </li>
@@ -79,9 +79,9 @@ export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {
           Como funciona
         </p>
         <ol className="flex flex-col gap-2">
-          {HOW_TO_PLAY.map(({ icon, text }, i) => (
+          {HOW_TO_PLAY.map(({ step, text }, i) => (
             <li key={i} className="flex items-center gap-3 text-sm text-slate-300">
-              <span className="text-lg w-7 text-center flex-shrink-0">{icon}</span>
+              <span className="text-[10px] font-black tabular-nums text-party-violet w-7 flex-shrink-0">{step}</span>
               <span>{text}</span>
             </li>
           ))}
@@ -103,7 +103,7 @@ export default function LobbyPage({ player, lobbyState, isHost, onStartGame }) {
                 transition-all duration-150
               "
             >
-              🚀 Iniciar Partida
+              Iniciar Partida
             </button>
             {onlinePlayers.length < 2 && (
               <p className="text-slate-500 text-xs text-center">

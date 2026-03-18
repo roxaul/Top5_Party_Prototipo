@@ -29,6 +29,10 @@ export const SOCKET_EVENTS = {
   RANKING_SUBMIT:     'ranking:submit',
   CARD_PLAY:          'card:play',
 
+  // cliente → servidor (truco)
+  TRUCO_CALL:         'truco:call',
+  TRUCO_RESPOND:      'truco:respond',
+
   // cliente → servidor (mesa)
   ROOM_RESET:         'room:reset',
 
@@ -43,9 +47,12 @@ export const SOCKET_EVENTS = {
   TURN_UPDATE:        'turn:update',
   HAND_UPDATE:        'hand:update',
   CARD_PLAYED:        'card:played',
-  PHASE_ROUND_RESULT: 'phase:round-result',
-  PHASE_GAME_OVER:    'phase:game-over',
-  PHASE_PLAYING:      'phase:playing',
+  PHASE_ROUND_RESULT:   'phase:round-result',
+  PHASE_GAME_OVER:      'phase:game-over',
+  PHASE_PLAYING:        'phase:playing',
+  // truco
+  PHASE_TRUCO_DECISION: 'phase:truco-decision',
+  TRUCO_RESULT:         'truco:result',
 };
 
 export const SESSION_KEY = 'top5party_session';
@@ -61,4 +68,7 @@ export const INITIAL_LOBBY_STATE = {
   roundNumber:      0,
   totalRounds:      0,
   scores:           {},
+  roundMultiplier:  1,
+  trucoCaller:      null,
+  trucoState:       null,
 };

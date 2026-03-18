@@ -18,6 +18,8 @@ export function useGameSocket() {
   // Opções de tema personalizadas (3 únicas por jogador)
   const [myThemeOptions, setMyThemeOptions] = useState([]);
   const [mySelectedTheme, setMySelectedTheme] = useState(null);
+  // Truco: decisão pendente { callerSessionId, callerName, currentValue, proposedValue, label }
+  const [trucoDecision, setTrucoDecision] = useState(null);
 
   useEffect(() => {
     socket.connect();
@@ -71,12 +73,14 @@ export function useGameSocket() {
     socket.on(SOCKET_EVENTS.GAME_STARTED, (state) => {
       setLobbyState(state);
       setRoundResult(null);
+      setTrucoDecision(null);
       setScreen(SCREEN.HAND);
     });
 
     socket.on(SOCKET_EVENTS.PHASE_PLAYING, (state) => {
       setLobbyState(state);
       setRoundResult(null);
+      setTrucoDecision(null);
       setScreen(SCREEN.HAND);
     });
 
@@ -96,6 +100,18 @@ export function useGameSocket() {
       setScreen(SCREEN.GAME_OVER);
     });
 
+    // Truco: decisão pedida
+    socket.on(SOCKET_EVENTS.PHASE_TRUCO_DECISION, (data) => {
+      setTrucoDecision(data);
+      if (data.lobbyState) setLobbyState(data.lobbyState);
+    });
+
+    // Truco: aceito ou contra-ofertado
+    socket.on(SOCKET_EVENTS.TRUCO_RESULT, ({ outcome, lobbyState: ls }) => {
+      if (outcome === 'accepted') setTrucoDecision(null);
+      if (ls) setLobbyState(ls);
+    });
+
     socket.on(SOCKET_EVENTS.ROOM_RESET, () => {
       storage.removeItem(SESSION_KEY);
       setPlayer(null);
@@ -106,18 +122,20 @@ export function useGameSocket() {
       setTurnInfo(null);
       setMyThemeOptions([]);
       setMySelectedTheme(null);
+      setTrucoDecision(null);
       setScreen(SCREEN.JOIN);
     });
 
     return () => {
       [
         'connect', 'disconnect',
-        SOCKET_EVENTS.PLAYER_JOINED,      SOCKET_EVENTS.PLAYER_REJOINED,
-        SOCKET_EVENTS.LOBBY_UPDATE,       SOCKET_EVENTS.PHASE_THEME_SELECT,
+        SOCKET_EVENTS.PLAYER_JOINED,       SOCKET_EVENTS.PLAYER_REJOINED,
+        SOCKET_EVENTS.LOBBY_UPDATE,        SOCKET_EVENTS.PHASE_THEME_SELECT,
         SOCKET_EVENTS.PHASE_RANKING_INPUT, SOCKET_EVENTS.GAME_STARTED,
-        SOCKET_EVENTS.PHASE_PLAYING,      SOCKET_EVENTS.TURN_UPDATE,
-        SOCKET_EVENTS.HAND_UPDATE,        SOCKET_EVENTS.PHASE_ROUND_RESULT,
-        SOCKET_EVENTS.PHASE_GAME_OVER,    SOCKET_EVENTS.ROOM_RESET,
+        SOCKET_EVENTS.PHASE_PLAYING,       SOCKET_EVENTS.TURN_UPDATE,
+        SOCKET_EVENTS.HAND_UPDATE,         SOCKET_EVENTS.PHASE_ROUND_RESULT,
+        SOCKET_EVENTS.PHASE_GAME_OVER,     SOCKET_EVENTS.ROOM_RESET,
+        SOCKET_EVENTS.PHASE_TRUCO_DECISION, SOCKET_EVENTS.TRUCO_RESULT,
       ].forEach((ev) => socket.off(ev));
     };
   }, []);
@@ -150,6 +168,8 @@ export function useGameSocket() {
 
   function submitRanking(items) { socket.emit(SOCKET_EVENTS.RANKING_SUBMIT, { items }); }
   function playCard(cardId)     { socket.emit(SOCKET_EVENTS.CARD_PLAY,      { cardId }); }
+  function callTruco()                   { socket.emit(SOCKET_EVENTS.TRUCO_CALL); }
+  function respondTruco(response)        { socket.emit(SOCKET_EVENTS.TRUCO_RESPOND, { response }); }
 
   const isHost   = player?.sessionId === lobbyState.hostPlayerId;
   const isMyTurn = turnInfo?.currentTurn === player?.sessionId;
@@ -158,6 +178,8 @@ export function useGameSocket() {
     screen, player, lobbyState, hand, connected, isHost,
     roundResult, gameOver, turnInfo, isMyTurn,
     myThemeOptions, mySelectedTheme,
+    trucoDecision,
     joinGame, startGame, selectTheme, submitRanking, playCard,
+    callTruco, respondTruco,
   };
 }

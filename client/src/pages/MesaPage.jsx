@@ -22,6 +22,7 @@ export default function MesaPage() {
   const [turnInfo, setTurnInfo]         = useState(null);
   const [roundResult, setRoundResult]   = useState(null);
   const [gameOver, setGameOver]         = useState(null);
+  const [trucoEvent, setTrucoEvent]     = useState(null);    // último evento de truco
 
   useEffect(() => {
     socket.connect();
@@ -40,8 +41,18 @@ export default function MesaPage() {
 
     socket.on('lobby:state',  (state) => setLobbyState(state));
     socket.on('lobby:update', (state) => setLobbyState(state));
-    socket.on('game:started',      (state) => { setLobbyState(state); setCards([]); setRoundResult(null); });
-    socket.on('phase:playing',     (state) => { setLobbyState(state); setCards([]); setRoundResult(null); });
+    socket.on('game:started',      (state) => { setLobbyState(state); setCards([]); setRoundResult(null); setTrucoEvent(null); });
+    socket.on('phase:playing',     (state) => { setLobbyState(state); setCards([]); setRoundResult(null); setTrucoEvent(null); });
+
+    socket.on('phase:truco-decision', (data) => {
+      setTrucoEvent({ type: 'pending', ...data });
+      if (data.lobbyState) setLobbyState(data.lobbyState);
+    });
+
+    socket.on('truco:result', (data) => {
+      setTrucoEvent({ type: 'accepted', ...data });
+      if (data.lobbyState) setLobbyState(data.lobbyState);
+    });
     socket.on('phase:theme-select',(state) => { setLobbyState(state?.lobbyState ?? state); });
 
     socket.on('turn:update', (info) => setTurnInfo(info));
@@ -64,12 +75,14 @@ export default function MesaPage() {
       setTurnInfo(null);
       setRoundResult(null);
       setGameOver(null);
+      setTrucoEvent(null);
     });
 
     return () => {
       ['connect', 'disconnect', 'lobby:state', 'lobby:update',
        'game:started', 'phase:playing', 'phase:theme-select', 'turn:update',
        'card:played', 'phase:round-result', 'phase:game-over', 'room:reset',
+       'phase:truco-decision', 'truco:result',
       ].forEach((ev) => socket.off(ev));
     };
   }, []);
@@ -102,7 +115,7 @@ export default function MesaPage() {
 
       {/* ── Header ── */}
       <header className="bg-party-surface border-b border-party-border px-4 md:px-8 py-3 flex items-center gap-3 flex-wrap">
-        <h1 className="text-lg md:text-xl font-bold text-party-violet">🎮 Top 5 Party</h1>
+        <h1 className="text-lg md:text-xl font-bold text-party-violet">Top 5 Party</h1>
 
         <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
           connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
@@ -155,11 +168,43 @@ export default function MesaPage() {
       {/* ── Banner de turno ── */}
       {isPlaying && currentTurnPlayer && (
         <div className="border-b border-party-border bg-party-purple/5 px-4 md:px-8 py-2 flex items-center gap-3">
-          <span className="text-2xl animate-pulse">🃏</span>
+          <div className="w-1.5 h-1.5 rounded-full bg-party-purple animate-pulse flex-shrink-0" />
           <span className="text-sm text-slate-400">Vez de</span>
           <span className="text-white font-bold text-base">{currentTurnPlayer.name}</span>
+          {(lobbyState.roundMultiplier ?? 1) > 1 && (
+            <span className="text-xs font-black text-orange-300 bg-orange-500/20 border border-orange-500/40 px-2 py-0.5 rounded-lg">
+              ×{lobbyState.roundMultiplier}
+            </span>
+          )}
           <span className="ml-auto text-xs text-slate-500">
             {cards.length} de {onlinePlayers.length} jogaram esta rodada
+          </span>
+        </div>
+      )}
+
+      {/* ── Banner de Truco pendente ── */}
+      {trucoEvent?.type === 'pending' && (
+        <div className="border-b-2 border-orange-500 bg-orange-500/10 px-4 md:px-8 py-3 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+          <span className="text-orange-300 font-black text-lg tracking-wide">{trucoEvent.label}!</span>
+          <span className="text-slate-300 text-sm">
+            <span className="font-bold text-white">{trucoEvent.callerName}</span> pediu{' '}
+            {trucoEvent.label} — vale{' '}
+            <span className="text-orange-300 font-bold">{trucoEvent.proposedValue} pts</span>
+          </span>
+          <span className="ml-auto text-xs text-orange-400 animate-pulse font-semibold">
+            Aguardando resposta...
+          </span>
+        </div>
+      )}
+
+      {/* ── Banner Truco aceito ── */}
+      {trucoEvent?.type === 'accepted' && (
+        <div className="border-b border-green-500/40 bg-green-500/10 px-4 md:px-8 py-2 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+          <span className="text-green-300 text-sm font-semibold">
+            <span className="text-white font-bold">{trucoEvent.accepterName}</span> aceitou —
+            rodada vale <span className="text-green-200 font-black">{trucoEvent.newMultiplier} pontos</span>!
           </span>
         </div>
       )}
@@ -188,10 +233,10 @@ export default function MesaPage() {
                   >
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.connected ? 'bg-green-400' : 'bg-red-400'}`} />
                     {turnInfo?.currentTurn === p.sessionId && isPlaying && (
-                      <span className="text-sm">🃏</span>
+                      <div className="w-1.5 h-1.5 rounded-full bg-party-purple animate-pulse flex-shrink-0" />
                     )}
                     <span className="text-sm flex-1 truncate">{p.name}</span>
-                    {p.isHost && <span className="text-base flex-shrink-0" title="Host atual">👑</span>}
+                    {p.isHost && <span className="text-[10px] font-black uppercase tracking-wider text-party-violet flex-shrink-0">Host</span>}
                     {isLobby && p.connected && !p.isHost && (
                       <button
                         onClick={() => handleTransferHost(p.sessionId)}
@@ -258,9 +303,16 @@ export default function MesaPage() {
           {(isPlaying || isResult) && (
             <>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xs uppercase tracking-widest text-party-violet font-semibold">
-                  Mesa — Rodada {turnInfo?.roundNumber ?? '?'}/{turnInfo?.totalRounds ?? '?'}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xs uppercase tracking-widest text-party-violet font-semibold">
+                    Mesa — Rodada {turnInfo?.roundNumber ?? '?'}/{turnInfo?.totalRounds ?? '?'}
+                  </h2>
+                  {(lobbyState.roundMultiplier ?? 1) > 1 && (
+                    <span className="text-xs font-black text-orange-300 bg-orange-500/20 border border-orange-500/40 px-2 py-0.5 rounded-lg">
+                      ×{lobbyState.roundMultiplier}
+                    </span>
+                  )}
+                </div>
                 {cards.length > 0 && (
                   <span className="text-xs text-slate-500">
                     {cards.length}/{onlinePlayers.length} jogaram
@@ -275,10 +327,11 @@ export default function MesaPage() {
                   <p className="text-xs uppercase tracking-widest text-slate-400 mb-1">Resultado</p>
                   {roundResult.winner ? (
                     <p className="text-white font-bold text-xl">
-                      🏆 <span className="text-yellow-300">{roundResult.winner.name}</span> venceu a rodada!
+                      <span className="text-yellow-300">{roundResult.winner.name}</span> venceu a rodada
+                      {(roundResult.pointsWon ?? 1) > 1 && <span className="text-orange-300 text-base ml-2">+{roundResult.pointsWon} pts</span>}
                     </p>
                   ) : (
-                    <p className="text-white font-bold text-xl">🤝 Empate!</p>
+                    <p className="text-white font-bold text-xl">Empate</p>
                   )}
                   <p className="text-xs text-slate-500 mt-1 animate-pulse">Próxima rodada em instantes...</p>
                 </div>
@@ -287,7 +340,7 @@ export default function MesaPage() {
               {/* Cartas na mesa */}
               {cards.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
-                  <div className="text-5xl opacity-20">🃏</div>
+                  <div className="w-8 h-8 rounded-xl border-2 border-party-border/40 opacity-30" />
                   <p className="text-slate-500 text-sm">Aguardando jogadores jogarem cartas...</p>
                 </div>
               ) : (
@@ -347,7 +400,7 @@ export default function MesaPage() {
           {isGameOver && gameOver && (
             <div className="flex-1 flex flex-col gap-6 py-4">
               <div className="text-center">
-                <div className="text-5xl mb-2">🏆</div>
+                <div className={`w-10 h-1.5 rounded-full mx-auto mb-4 ${gameOver.winner ? 'bg-yellow-400' : 'bg-party-violet'}`} />
                 <h2 className="text-3xl font-black text-white">
                   {gameOver.winner ? (
                     <><span className="text-yellow-300">{gameOver.winner.name}</span> venceu!</>
@@ -365,8 +418,8 @@ export default function MesaPage() {
                         : 'border-party-border bg-party-bg'
                       }`}
                   >
-                    <span className="text-2xl w-8 text-center flex-shrink-0">
-                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}
+                    <span className={`text-sm font-black w-8 text-center flex-shrink-0 tabular-nums ${i === 0 ? 'text-yellow-400' : 'text-slate-500'}`}>
+                      {i + 1}
                     </span>
                     <span className="flex-1 font-bold text-lg text-white truncate">{entry.name}</span>
                     <span className={`font-black text-2xl tabular-nums ${entry.isWinner ? 'text-yellow-300' : 'text-white'}`}>
@@ -381,9 +434,7 @@ export default function MesaPage() {
           {/* Fases intermediárias sem área central especial */}
           {(lobbyState.status === 'theme-select' || lobbyState.status === 'ranking-input') && (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-8">
-              <div className="text-5xl opacity-40">
-                {lobbyState.status === 'theme-select' ? '🎯' : '📝'}
-              </div>
+              <div className="w-10 h-1 rounded-full bg-party-border opacity-50" />
               <p className="text-slate-400 text-lg font-semibold">
                 {lobbyState.status === 'theme-select'
                   ? 'Jogadores escolhendo sua pergunta...'
