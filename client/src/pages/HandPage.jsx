@@ -71,7 +71,7 @@ export default function HandPage({
   const [playedId, setPlayedId]           = useState(null);
   const [dragDelta, setDragDelta]         = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging]       = useState(false);
-  const touchRef                          = useRef(null);
+  const dragRef                           = useRef(null);
 
   const safeIndex       = Math.min(activeIndex, Math.max(0, hand.length - 1));
   const roundMultiplier = lobbyState?.roundMultiplier ?? 1;
@@ -105,25 +105,25 @@ export default function HandPage({
     }, 380);
   }
 
-  // ── Swipe handlers ───────────────────────────────────────────────────────────
-  function handleTouchStart(e) {
-    const t = e.touches[0];
-    touchRef.current = { x: t.clientX, y: t.clientY };
+  // ── Pointer handlers (unifica mouse + touch) ─────────────────────────────────
+  function handlePointerDown(e) {
+    if (e.button !== 0) return; // apenas botão primário / toque
+    dragRef.current = { x: e.clientX, y: e.clientY };
     setIsDragging(true);
     setDragDelta({ x: 0, y: 0 });
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
-  function handleTouchMove(e) {
-    if (!touchRef.current) return;
-    const t = e.touches[0];
+  function handlePointerMove(e) {
+    if (!dragRef.current) return;
     setDragDelta({
-      x: t.clientX - touchRef.current.x,
-      y: t.clientY - touchRef.current.y,
+      x: e.clientX - dragRef.current.x,
+      y: e.clientY - dragRef.current.y,
     });
   }
 
-  function handleTouchEnd() {
-    if (!touchRef.current) return;
+  function handlePointerUp() {
+    if (!dragRef.current) return;
     const { x, y } = dragDelta;
 
     if (y < -70 && Math.abs(x) < 60 && isMyTurn) {
@@ -134,7 +134,7 @@ export default function HandPage({
       setActiveIndex((i) => Math.max(i - 1, 0));
     }
 
-    touchRef.current = null;
+    dragRef.current = null;
     setDragDelta({ x: 0, y: 0 });
     setIsDragging(false);
   }
@@ -230,9 +230,11 @@ export default function HandPage({
       {/* ── Área do carrossel ── */}
       <div
         className="flex-1 relative flex items-center justify-center"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        style={{ touchAction: 'none', cursor: isDragging ? 'grabbing' : 'grab' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         {hand.map((card, idx) => {
           const offset = idx - safeIndex;
@@ -285,6 +287,13 @@ export default function HandPage({
                   ? isBeingPlayed ? 'transform 0.38s cubic-bezier(0.4,0,0.2,1), opacity 0.38s ease' : 'none'
                   : 'transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.28s ease',
               }}
+              onClick={(e) => {
+                // Clique em carta lateral → navega para ela; não ativa se foi drag
+                if (!isActive && Math.abs(dragDelta.x) < 8 && Math.abs(dragDelta.y) < 8) {
+                  e.stopPropagation();
+                  setActiveIndex(idx);
+                }
+              }}
             >
               <GameCard card={card} />
             </div>
@@ -319,20 +328,48 @@ export default function HandPage({
         )}
       </div>
 
-      {/* ── Paginação (dots) ── */}
+      {/* ── Paginação (dots + setas) ── */}
       {hand.length > 1 && (
-        <div className="flex justify-center gap-1.5 py-3 flex-shrink-0">
-          {hand.map((_, idx) => (
-            <div
-              key={idx}
-              className="rounded-full transition-all duration-200"
-              style={{
-                width:  idx === safeIndex ? 16 : 6,
-                height: 6,
-                background: idx === safeIndex ? '#a78bfa' : '#2d2d44',
-              }}
-            />
-          ))}
+        <div className="flex items-center justify-center gap-3 py-3 flex-shrink-0">
+          <button
+            onClick={() => setActiveIndex((i) => Math.max(i - 1, 0))}
+            disabled={safeIndex === 0}
+            className="w-7 h-7 flex items-center justify-center rounded-full transition-all disabled:opacity-20"
+            style={{ background: '#2d2d44' }}
+            aria-label="Carta anterior"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M8 2L4 6l4 4" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+
+          <div className="flex gap-1.5">
+            {hand.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => setActiveIndex(idx)}
+                className="rounded-full transition-all duration-200"
+                style={{
+                  width:  idx === safeIndex ? 16 : 6,
+                  height: 6,
+                  background: idx === safeIndex ? '#a78bfa' : '#2d2d44',
+                }}
+                aria-label={`Carta ${idx + 1}`}
+              />
+            ))}
+          </div>
+
+          <button
+            onClick={() => setActiveIndex((i) => Math.min(i + 1, hand.length - 1))}
+            disabled={safeIndex === hand.length - 1}
+            className="w-7 h-7 flex items-center justify-center rounded-full transition-all disabled:opacity-20"
+            style={{ background: '#2d2d44' }}
+            aria-label="Próxima carta"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M4 2l4 4-4 4" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
         </div>
       )}
 

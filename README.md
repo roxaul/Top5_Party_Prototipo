@@ -1,4 +1,4 @@
-# 🎮 Top 5 Party
+# Top 5 Party
 
 > **"Você acha que conhece as preferências dos seus amigos? Prove."**
 
@@ -12,13 +12,25 @@ A premissa é simples e social: **todo mundo tem opiniões, e ninguém concorda 
 
 Cada jogador escolhe uma pergunta exclusiva e lista seu Top 5 de respostas. As respostas viram cartas num baralho virtual, embaralhadas e redistribuídas — você pode acabar com a carta favorita do seu amigo na mão sem saber.
 
-A mecânica central é de **vazas por turno** (trick-taking): cada jogador joga uma carta na sua vez. Quem jogar a carta de **maior valor** leva a rodada. O valor de uma carta é determinado pela posição original na lista de quem a criou — um **1º lugar vale rank 5**, um **5º lugar vale rank 1**.
+A mecânica central é de **vazas por turno** (trick-taking): cada jogador joga uma carta na sua vez. Quem jogar a carta de **maior valor** leva a rodada. O valor é determinado pela posição original na lista de quem a criou — `1º lugar = rank 5`, `5º lugar = rank 1`.
 
-O segredo está em saber o que seu amigo colocou como favorito — e jogar na hora certa.
+O segredo está em ler o que seu amigo colocou como favorito — e jogar (ou blefar) na hora certa.
 
-### O Twist: a Aposta *(planejado)*
+---
 
-Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acertou? Bônus de pontos. Errou? Penalidade. Isso transforma cada jogada num momento de tensão social: *"Isso aqui parece coisa do João... ou será da Mari?"*
+## A Mecânica de Truco
+
+Qualquer jogador pode gritar **TRUCO** a qualquer momento durante a fase de jogo. Isso pausa o turno e força os outros a decidir:
+
+| Decisão | Consequência |
+|---------|-------------|
+| **Aceitar** | Rodada continua valendo os pontos elevados |
+| **Fugir** | Quem pediu leva os pontos do nível atual, rodada encerra sem revelar cartas |
+| **Contra-oferta** (Seis / Nove / Doze) | Os papéis se invertem — quem pediu agora precisa aceitar ou fugir |
+
+**Progressão de pontos:** 1 → 3 → 6 → 9 → 12
+
+A tensão está em não saber se a carta do adversário é um 5 ou um 1 — e decidir apostar nisso.
 
 ---
 
@@ -29,8 +41,9 @@ Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acer
 | **Zero atrito para entrar** | Basta escanear o QR Code. Nenhum app para instalar |
 | **Perguntas únicas por jogador** | Cada um escolhe entre 3 perguntas exclusivas — ninguém responde a mesma coisa |
 | **Conteúdo gerado pelos próprios jogadores** | As cartas são as opiniões reais de quem está na mesa |
-| **Imagens geradas automaticamente** *(planejado)* | Cada carta busca uma imagem real e aplica shader artístico — visual único em cada partida |
-| **Funciona offline** | Após o download das imagens, o jogo roda sem internet |
+| **Blefe social real** | Truco com identidade cultural — qualquer jogador pode elevar a aposta a qualquer momento |
+| **Persistência local** | Respostas e histórico de partidas salvos em PostgreSQL local para análise futura |
+| **Funciona sem banco** | Se o PostgreSQL não estiver disponível, o jogo roda normalmente |
 | **Steam Deck ready** | Pensado para rodar como host portátil numa mesa de bar ou sala |
 
 ---
@@ -38,98 +51,91 @@ Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acer
 ## Fluxo de uma Partida
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  1. HOST abre o jogo no PC/Steam Deck em /mesa               │
-│     └── QR Code aparece na tela grande                       │
-│                                                              │
-│  2. JOGADORES escaneiam com o celular (2 a 8 pessoas)        │
-│     └── Primeiro a entrar vira o HOST da rodada              │
-│                                                              │
-│  3. HOST clica em "Iniciar Partida"                          │
-│                                                              │
-│  4. Cada jogador recebe 3 PERGUNTAS EXCLUSIVAS suas          │
-│     Ex: Jogador A vê: "Top 5 Filmes de Terror" /             │
-│                       "Top 5 Destinos de Viagem" /           │
-│                       "Top 5 Comidas do Verão"               │
-│     └── Cada um escolhe a pergunta que mais curtir           │
-│     └── As perguntas NÃO são compartilhadas entre jogadores  │
-│                                                              │
-│  5. TODOS submetem seu Top 5 secretamente                    │
-│     1º: O Iluminado  2º: Hereditário  3º: ...                │
-│                                                              │
-│  6. Servidor embaralha tudo e distribui as cartas            │
-│     └── Cada carta mostra: Pergunta | Resposta | Respondeu   │
-│     └── O VALOR (rank 1-5) fica oculto na mão                │
-│                                                              │
-│  7. Rodada de VAZAS começa — turnos em ordem                 │
-│     └── A Mesa indica de quem é a vez                        │
-│     └── Só quem está no turno pode jogar                     │
-│     └── Maior rank vence a rodada → +1 ponto                 │
-│                                                              │
-│  8. RESULTADO da rodada: rank revelado para todos            │
-│     └── Placar atualizado, próxima rodada em 5 segundos      │
-│                                                              │
-│  9. Após todas as rodadas → VENCEDOR anunciado               │
-└─────────────────────────────────────────────────────────────┘
+1. HOST abre /mesa no PC/Steam Deck
+   └── QR Code aparece na tela grande
+
+2. JOGADORES escaneiam com o celular (2 a 8 pessoas)
+   └── Primeiro a entrar vira o Host da rodada
+
+3. Host clica em "Iniciar Partida"
+
+4. Cada jogador recebe 3 PERGUNTAS EXCLUSIVAS
+   Ex: "Top 5 Filmes de Terror" / "Top 5 Destinos de Viagem" / "Top 5 Comidas do Verão"
+   └── Cada um escolhe a sua — não são compartilhadas
+
+5. Todos submetem seu Top 5 secretamente
+   1º: O Iluminado  |  2º: Hereditário  |  3º: ...
+
+6. Servidor embaralha e distribui as cartas
+   └── Carta mostra: Pergunta | Resposta | Respondeu
+   └── O RANK (1–5) fica oculto — só você sabe o da sua mão
+
+7. Rodadas de vazas — em turnos
+   └── Deslize a carta para cima para jogá-la
+   └── A Mesa mostra quem está jogando e as cartas na mesa
+   └── Qualquer jogador pode pedir TRUCO antes ou durante o turno
+
+8. Resultado da rodada
+   └── Rank revelado para todos
+   └── Pontos aplicados (com multiplicador de Truco, se houver)
+   └── Próxima rodada começa em 5 segundos
+
+9. Após todas as rodadas → Vencedor anunciado
+   └── Partida salva no banco local com todas as respostas e rodadas
 ```
 
 ---
 
 ## O que aparece em cada carta
 
-Toda carta exibe **3 campos obrigatórios**:
-
 | Campo | Descrição | Exemplo |
 |-------|-----------|---------|
-| **PERGUNTA** | A questão que o jogador escolheu responder | *Top 5 Filmes de Terror* |
+| **PERGUNTA** | A questão que o jogador escolheu | *Top 5 Filmes de Terror* |
 | **RESPOSTA** | O item que o jogador colocou na lista | *O Iluminado* |
 | **RESPONDEU** | Quem escreveu essa resposta | *Maria* |
 
-O **valor/rank** (1–5) fica oculto durante o jogo e é revelado apenas quando a carta é jogada na Mesa e no resultado da rodada.
-
-> O formato das cartas é JSON puro — pronto para persistência em banco de dados e cache agressivo.
+O **rank** (1–5) fica oculto durante o jogo e é revelado no resultado da rodada.
 
 ---
 
-## Visual — A Feature que Diferencia *(planejado)*
+## Interface — Mão de Cartas (Mobile)
 
-Quando um jogador digita *"Pizza de Calabresa"*, o sistema não exibe só texto. Ele:
+A tela do jogador funciona como uma mão de cartas de board game:
 
-1. Faz uma busca na **Google Custom Search API** com Safe Search ativado
-2. Baixa a imagem encontrada
-3. Aplica um **shader artístico** via Unity Shader Graph — estilo Pintura a Óleo, Pixel Art ou Cel-shading
-4. Salva em cache local para não repetir a busca
-
-> Imagens são cacheadas localmente. Se a cota da API acabar ou a internet cair, o jogo usa placeholders artísticos e continua funcionando.
+- **Leque**: a carta ativa fica centralizada e em destaque; as vizinhas aparecem nas laterais com escala e rotação reduzidas
+- **Swipe horizontal**: navega entre as cartas da mão
+- **Swipe para cima**: joga a carta selecionada — ela voa para a mesa com animação
+- **Não é seu turno**: todas as cartas ficam transparentes (~38% de opacidade); um overlay indica quem está jogando
+- **Botão TRUCO**: fixo na barra inferior, disponível a qualquer momento durante o jogo
 
 ---
 
 ## Arquitetura Técnica
 
-O sistema opera em **Tríade Local** — tudo na mesma rede, sem servidor externo:
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Rede Wi-Fi Local                    │
-│                                                          │
-│   ┌──────────────┐        ┌─────────────────────────┐   │
-│   │  Unity (PC)  │◄──────►│   Servidor Node.js      │   │
-│   │    Mesa      │        │   Express + Socket.IO   │   │
-│   │  Host Visual │        │   Porta 3000            │   │
-│   └──────────────┘        └────────────┬────────────┘   │
-│                                        │                  │
-│                           ┌────────────▼────────────┐   │
-│                           │   React App (Mão)        │   │
-│                           │   Acessado no celular    │   │
-│                           └─────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        Rede Wi-Fi Local                       │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────┐     │
+│  │              Servidor Node.js (:3000)               │     │
+│  │         Express + Socket.IO + PostgreSQL            │     │
+│  │    Estado do jogo em memória + persistência local   │     │
+│  └──────────────┬──────────────────────────┬───────────┘     │
+│                 │                          │                  │
+│  ┌──────────────▼──────────┐  ┌───────────▼─────────────┐   │
+│  │   React App /mesa       │  │   React App / (mobile)  │   │
+│  │   Tela da Mesa          │  │   Mão de cartas          │   │
+│  │   Cartas + Placar + QR  │  │   Swipe + Truco          │   │
+│  └─────────────────────────┘  └─────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 | Componente | Tecnologia | Papel |
 |---|---|---|
-| **Mesa** | Unity 2022 LTS + Shader Graph *(planejado)* | Gráficos, áudio, animações, shaders nas cartas |
-| **Servidor** | Node.js + Socket.IO + Express | Estado do jogo, turnos, pontuação, WebSocket |
-| **Mão** | React + Vite + Tailwind CSS | Controle individual no celular |
+| **Servidor** | Node.js + Socket.IO + Express | Estado do jogo, turnos, pontuação, Truco |
+| **Banco local** | PostgreSQL + `pg` | Persistência de respostas e histórico de partidas |
+| **Mesa** | React + Vite + Tailwind CSS | Tela grande — cartas, placar, QR, Truco ao vivo |
+| **Mão** | React + Vite + Tailwind CSS | Controle individual no celular — carrossel + swipe |
 
 ---
 
@@ -137,41 +143,48 @@ O sistema opera em **Tríade Local** — tudo na mesma rede, sem servidor extern
 
 | Componente | Tecnologia |
 |---|---|
-| Engine visual | Unity 2022 LTS *(planejado)* |
-| Servidor | Node.js + Socket.IO |
-| Frontend mobile | React + Vite + Tailwind CSS |
-| Comunicação Unity | SocketIOUnity (C#) *(planejado)* |
-| Imagens | Google Custom Search API *(planejado)* |
+| Servidor | Node.js + Express + Socket.IO |
+| Banco local | PostgreSQL via `pg` |
+| Frontend | React 18 + Vite + Tailwind CSS |
+| Config | `dotenv` |
 
 ---
 
-## Estado Atual do Protótipo
-
-Camada Node.js + React completamente implementada:
+## Estado do Protótipo
 
 - [x] Servidor WebSocket local com QR Code automático
-- [x] Lobby com reconexão automática (sessionId no sessionStorage)
-- [x] Designação automática de Host (primeiro jogador a entrar)
-- [x] **Cada jogador recebe 3 perguntas exclusivas** — seleção individual, não compartilhada
-- [x] **Submissão de Top 5** por jogador para sua pergunta escolhida
-- [x] **Cartas com 3 campos**: Pergunta | Resposta | Respondeu (formato JSON pronto para banco)
+- [x] Lobby com reconexão automática (sessionId persistido no sessionStorage)
+- [x] Host automático — primeiro jogador a entrar; re-designado em desconexão
+- [x] Cada jogador recebe 3 perguntas exclusivas — seleção individual
+- [x] Submissão de Top 5 por jogador para sua pergunta escolhida
+- [x] Cartas com 3 campos: Pergunta | Resposta | Respondeu (formato JSON encapsulado)
 - [x] Distribuição aleatória de cartas entre os jogadores
-- [x] **Turnos controlados**: só quem está no turno pode jogar; Mesa indica a vez em tempo real
-- [x] **Pontuação por rodada**: maior rank ganha a vaza (+1 ponto)
-- [x] **Tela de resultado por rodada**: rank revelado, placar atualizado
-- [x] **Tela de Game Over** com pódio final e vencedor
-- [x] Mesa React com QR code, lista de jogadores, indicador de turno e placar ao vivo
-- [x] Placar compacto visível na mão do jogador durante o jogo
-- [x] Layout responsivo: portrait no celular, landscape no PC/tablet
-- [x] Suporte a safe-area iOS (notch, barra home) e 100svh
-- [ ] Mecânica de aposta (adivinhar o dono da carta antes de jogar)
-- [ ] Fase de revelação com animação dramática
-- [ ] Integração Unity como Mesa
+- [x] Turnos controlados pelo servidor — só quem está no turno joga
+- [x] **Mecânica de Truco completa** — progressão 1/3/6/9/12, aceitar/fugir/contra-oferta, fuga sem revelar cartas
+- [x] Pontuação por rodada com multiplicador de Truco aplicado ao vencedor
+- [x] Resultado de rodada: rank revelado, pontos exibidos, placar atualizado
+- [x] Game Over com pódio final
+- [x] **Interface mobile Sunderfolk-style** — carrossel em leque, swipe-up para jogar, transparência quando aguardando
+- [x] Mesa React com QR code, indicador de turno, banners de Truco ao vivo, placar
+- [x] Design premium sem emojis — hierarquia tipográfica com acentos CSS
+- [x] **Camada de banco PostgreSQL local** — schema auto-criado, graceful degradation sem banco
+- [x] **Repository pattern** — toda query SQL isolada em `server/repository.js`
+- [x] Partida completa salva ao fim (jogadores, respostas, rodadas, cartas jogadas)
+- [ ] Win condition configurável (ex: primeiro a X pontos)
+- [ ] Timer de turno para evitar AFK
+- [ ] Identidade visual por jogador (cor única por sessão)
+- [ ] Mecânica de dedução — apostar na identidade do dono da carta
+- [ ] Integração Unity como Mesa visual
 - [ ] Busca de imagens por carta + cache local + shaders
 
 ---
 
 ## Setup Rápido
+
+### Pré-requisitos
+
+- Node.js v18+
+- *(Opcional)* PostgreSQL rodando localmente
 
 ### Modo produção (recomendado para jogar)
 
@@ -179,16 +192,21 @@ Camada Node.js + React completamente implementada:
 # 1. Instalar dependências (só na primeira vez)
 npm run install:all
 
-# 2. Compilar o cliente React e iniciar o servidor
+# 2. Configurar banco (opcional — pule se não quiser persistência)
+cp server/.env.example server/.env
+# edite server/.env com sua senha do PostgreSQL
+# no psql: CREATE DATABASE top5party;
+
+# 3. Compilar e iniciar
 npm start
 ```
 
 | URL | Quem acessa |
 |-----|-------------|
-| `http://IP:3000/mesa` | PC / TV — tela da Mesa (QR code + cartas + placar) |
-| `http://IP:3000` | Celular — escaneie o QR Code para entrar |
+| `http://IP:3000/mesa` | PC / TV — tela da Mesa |
+| `http://IP:3000` | Celular — escaneie o QR Code |
 
-> ⚠️ Sempre que alterar código do cliente, rode `npm run build:client` antes de reiniciar o servidor.
+> Sempre que alterar código do cliente, rode `npm run build:client` antes de reiniciar o servidor.
 
 ### Modo desenvolvimento
 
@@ -205,7 +223,7 @@ npm run dev:client
 | `http://localhost:5173/mesa` | Mesa (dev) |
 | `http://localhost:5173` | Celular / player (dev) |
 
-> Em dev, o Vite faz proxy de `/socket.io` e `/qr` para o servidor na porta 3000. Ambos os terminais precisam estar rodando.
+> Em dev, o Vite faz proxy de `/socket.io` e `/qr` para o servidor na porta 3000.
 
 ### Liberar porta travada
 
@@ -213,11 +231,11 @@ npm run dev:client
 netstat -ano | findstr :3000   # anota o PID
 taskkill /PID <PID> /F
 
-# Ou mata todos os Node.js:
+# Ou mata todos os processos Node.js:
 taskkill /IM node.exe /F
 ```
 
-> Todos os dispositivos precisam estar na **mesma rede Wi-Fi**. Node.js v18+ necessário.
+> Todos os dispositivos precisam estar na **mesma rede Wi-Fi**.
 
 ---
 
@@ -225,13 +243,31 @@ taskkill /IM node.exe /F
 
 | Situação | Pontos |
 |----------|--------|
-| Carta com maior rank na rodada | +1 ponto para quem jogou |
-| Empate (mesmo rank) | Ninguém ganha ponto |
-| Adivinhar o dono da carta *(planejado)* | +bônus |
-| Errar a aposta *(planejado)* | −penalidade |
+| Carta com maior rank na rodada (normal) | +1 |
+| Truco aceito — vencedor da rodada | +3 |
+| Seis aceito — vencedor da rodada | +6 |
+| Nove aceito — vencedor da rodada | +9 |
+| Doze aceito — vencedor da rodada | +12 |
+| Fuga do Truco | Quem pediu leva o valor atual (antes da oferta) |
+| Empate (mesmo rank) | Ninguém pontua |
 
 **Rank das cartas:** posição na lista original do criador.
-`1º lugar = rank 5` (mais favorito) · `5º lugar = rank 1` (menos favorito)
+`1º lugar = rank 5` (favorito) · `5º lugar = rank 1` (menos favorito)
+
+---
+
+## Schema do Banco Local
+
+| Tabela | O que guarda |
+|--------|-------------|
+| `players` | Jogadores únicos (upsert por session_id) |
+| `games` | Cada partida — quem jogou, quando, quem venceu |
+| `game_players` | Score final de cada jogador por partida |
+| `answers` | Cada resposta do Top 5 (tema + texto + rank 1-5) |
+| `rounds` | Cada rodada — vencedor, multiplicador, fuga de Truco |
+| `round_cards` | Qual resposta foi jogada em qual rodada por quem |
+
+**Migração para nuvem:** troque apenas as variáveis `DB_*` no `.env` — o código não muda.
 
 ---
 
@@ -243,15 +279,5 @@ taskkill /IM node.exe /F
 | Jogadores simultâneos | 2 a 8 |
 | Orientação mobile | Portrait (retrato) |
 | Plataformas host | Windows x64 e Linux (Steam Deck) |
-| Formato das cartas | JSON puro (pronto para persistência e cache agressivo) |
-
----
-
-## Riscos e Mitigações
-
-| Risco | Impacto | Mitigação |
-|-------|---------|-----------|
-| API de imagens paga / cota limitada | Alto | Cache local agressivo no disco; placeholders artísticos como fallback |
-| Firewall do Windows bloqueando o servidor | Alto | Script instalador com exceção automática ou tutorial na primeira execução |
-| Imagens impróprias escapando do Safe Search | Médio | Safe Search strict na API; host pode banir imagem manualmente na Mesa |
-| Performance no Steam Deck | Baixo | Shaders são muito mais leves que IA generativa; meta é 60 FPS estável |
+| Banco | PostgreSQL local; graceful degradation sem banco |
+| Formato das cartas | JSON encapsulado — pronto para persistência e cache |

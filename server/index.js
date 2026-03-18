@@ -1,9 +1,13 @@
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const path = require('path');
 const QRCode = require('qrcode');
+const db   = require('./db');
+const repo = require('./repository');
 
 const app = express();
 const server = http.createServer(app);
@@ -142,6 +146,9 @@ const lobby = {
   trucoCaller:        null,      // sessionId de quem pediu
   trucoProposedValue: null,      // valor proposto (próximo nível)
   trucoState:         null,      // null | 'pending'
+  // persistência
+  roundHistory:       [],        // captura completa de cada rodada para salvar ao fim
+  currentGameId:      null,      // UUID retornado pelo banco após createGame
 };
 
 function connectedPlayers() {
@@ -205,6 +212,8 @@ function resetRoom() {
   lobby.trucoCaller         = null;
   lobby.trucoProposedValue  = null;
   lobby.trucoState          = null;
+  lobby.roundHistory        = [];
+  lobby.currentGameId       = null;
 }
 
 // ─── Montagem do baralho ──────────────────────────────────────────────────────
@@ -299,6 +308,20 @@ function endRound() {
     ),
   };
 
+  // Captura histórico ANTES de limpar roundCards
+  lobby.roundHistory.push({
+    roundNumber:      lobby.roundNumber + 1,
+    winnerSessionId:  winner,
+    multiplier:       lobby.roundMultiplier,
+    trucoFled:        false,
+    cards: Array.from(lobby.roundCards.entries()).map(([sid, { card, meta }]) => ({
+      ownerSessionId:    meta.owner,
+      text:              meta.text,
+      rank:              meta.rank,
+      playedBySessionId: sid,
+    })),
+  });
+
   lobby.roundNumber++;
   lobby.roundCards.clear();
   lobby.roundMultiplier    = 1;
@@ -349,6 +372,71 @@ function endGame() {
       ? { sessionId: topPlayer, name: sessions.get(topPlayer)?.name ?? '?', score: topScore }
       : null,
   });
+
+  // Persiste a partida completa no banco (fire-and-forget)
+  if (db.isEnabled()) {
+    saveGameToDb().catch((err) => console.error('[DB] Erro ao salvar partida:', err.message));
+  }
+}
+
+// ─── Persistência da partida completa ────────────────────────────────────────
+//
+// Salva tudo ao fim do jogo, evitando complexidade de sincronização durante
+// as rodadas. Usa o histório em memória (lobby.roundHistory + lobby.rankings).
+//
+async function saveGameToDb() {
+  const playerIds = lobby.turnOrder;
+
+  // 1. Upsert jogadores e criar partida
+  for (const sid of playerIds) {
+    const name = sessions.get(sid)?.name ?? '?';
+    await repo.upsertPlayer(sid, name);
+  }
+
+  const gameId = await repo.createGame(playerIds.length);
+
+  // 2. Participantes com score final
+  for (const sid of playerIds) {
+    const name  = sessions.get(sid)?.name ?? '?';
+    const score = lobby.scores.get(sid) ?? 0;
+    await repo.addGamePlayer(gameId, sid, name, score);
+  }
+
+  // 3. Respostas do Top 5 — gera mapa cardKey → answerId para cruzar com rodadas
+  //    cardKey: "sessionId::answerText::rank"  (chave determinística em memória)
+  const answerIdMap = new Map();
+  for (const [sid, items] of lobby.rankings.entries()) {
+    const theme = lobby.selectedThemes.get(sid) ?? '?';
+    for (let i = 0; i < items.length; i++) {
+      const rank     = 5 - i;
+      const answerId = await repo.insertAnswer(gameId, sid, theme, items[i], rank);
+      answerIdMap.set(`${sid}::${items[i]}::${rank}`, answerId);
+    }
+  }
+
+  // 4. Rodadas + cartas jogadas
+  for (const round of lobby.roundHistory) {
+    const roundId = await repo.insertRound(
+      gameId, round.roundNumber, round.winnerSessionId,
+      round.multiplier, round.trucoFled,
+    );
+    for (const c of round.cards) {
+      const key      = `${c.ownerSessionId}::${c.text}::${c.rank}`;
+      const answerId = answerIdMap.get(key);
+      if (answerId) {
+        await repo.insertRoundCard(roundId, answerId, c.playedBySessionId);
+      }
+    }
+  }
+
+  // 5. Finaliza partida com vencedor
+  let topScore = -1, topPlayer = null;
+  for (const [sid, score] of lobby.scores.entries()) {
+    if (score > topScore) { topScore = score; topPlayer = sid; }
+  }
+  await repo.finalizeGame(gameId, topPlayer);
+
+  console.log(`[DB] Partida ${gameId} salva — ${lobby.roundHistory.length} rodadas, ${playerIds.length} jogadores`);
 }
 
 // ─── Avança turno (pula desconectados) ────────────────────────────────────────
@@ -439,6 +527,13 @@ io.on('connection', (socket) => {
       socket.data.sessionId = sid;
       socket.join('players');
       socket.emit('player:joined', { sessionId: sid, name: sanitizedName });
+
+      // Registra jogador no banco (fire-and-forget)
+      if (db.isEnabled()) {
+        repo.upsertPlayer(sid, sanitizedName).catch((err) =>
+          console.error('[DB] upsertPlayer:', err.message)
+        );
+      }
     }
 
     broadcastLobbyUpdate();
@@ -590,6 +685,15 @@ io.on('connection', (socket) => {
       const callerName = sessions.get(caller)?.name ?? '?';
       console.log(`[TRUCO] ${responderName} fugiu! ${callerName} leva ${points} ponto(s)`);
 
+      // Captura histórico da rodada encerrada por fuga do Truco
+      lobby.roundHistory.push({
+        roundNumber:     lobby.roundNumber + 1,
+        winnerSessionId: caller,
+        multiplier:      points,
+        trucoFled:       true,
+        cards:           [],
+      });
+
       lobby.roundMultiplier    = 1;
       lobby.trucoCaller        = null;
       lobby.trucoProposedValue = null;
@@ -722,6 +826,9 @@ io.on('connection', (socket) => {
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
+
+// Inicia conexão com o banco (não bloqueia o servidor se falhar)
+db.connect();
 
 server.listen(PORT, '0.0.0.0', async () => {
   const ip  = getLocalIP();
