@@ -70,7 +70,8 @@ export default function RoundResultPage({ result, player, lobbyState }) {
     );
   }
 
-  const { roundNumber, totalRounds, cards = [], winner, scores = {}, playerNames = {}, trucoEscape, pointsAwarded } = result;
+  const { roundNumber, totalRounds, cards = [], winner, scores = {}, playerNames = {},
+          pointsWon = 1, trucoFled = false, fledBy } = result;
   const isWinner = winner?.sessionId === player?.sessionId;
 
   const sortedCards = [...cards].sort((a, b) => b.rank - a.rank);
@@ -83,46 +84,66 @@ export default function RoundResultPage({ result, player, lobbyState }) {
         <p className="text-xs uppercase tracking-widest text-party-violet font-semibold mb-1">
           Rodada {roundNumber} de {totalRounds}
         </p>
-        {trucoEscape ? (
+
+        {/* Badge de pontos com Truco */}
+        {pointsWon > 1 && (
+          <div className="inline-flex items-center gap-1.5 bg-orange-500/15 border border-orange-500/40 rounded-full px-3 py-1 mb-3">
+            <span className="text-orange-300 text-xs font-bold">⚡ Truco</span>
+            <span className="text-orange-200 text-sm font-black">+{pointsWon} pontos</span>
+          </div>
+        )}
+
+        {trucoFled ? (
           <>
+            <div className="w-8 h-1 bg-red-500 rounded-full mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-white">
-              {isWinner
-                ? 'Adversário fugiu do Truco!'
-                : <><span className="text-red-400">{winner?.name ?? 'Alguém'}</span> venceu por fuga!</>}
+              <span className="text-red-400">{fledBy}</span> fugiu!
             </h2>
-            <p className="text-yellow-400 text-sm mt-1 font-semibold">
-              +{pointsAwarded} ponto{pointsAwarded > 1 ? 's' : ''} sem revelar cartas
+            <p className="text-slate-400 text-sm mt-1">
+              {isWinner
+                ? `Você leva ${pointsWon} ponto${pointsWon !== 1 ? 's' : ''}`
+                : <><span className="text-party-violet">{winner?.name}</span> leva {pointsWon} ponto{pointsWon !== 1 ? 's' : ''}</>
+              }
             </p>
           </>
         ) : winner ? (
-          <h2 className="text-2xl font-bold text-white">
-            {isWinner
-              ? 'Você ganhou a rodada!'
-              : <><span className="text-party-violet">{winner.name}</span> ganhou!</>
+          <>
+            <div className={`w-8 h-1 rounded-full mx-auto mb-4 ${isWinner ? 'bg-yellow-400' : 'bg-party-violet'}`} />
+            <h2 className="text-2xl font-bold text-white">
+              {isWinner
+                ? 'Você ganhou a rodada!'
+                : <><span className="text-party-violet">{winner.name}</span> ganhou!</>
+              }
+            </h2>
+            {pointsWon === 1
+              ? <p className="text-slate-500 text-xs mt-1">Carta com maior valor vence</p>
+              : <p className="text-orange-300 text-xs mt-1">+{pointsWon} pontos — Truco aceito</p>
             }
-          </h2>
+          </>
         ) : (
-          <h2 className="text-2xl font-bold text-white">Empate!</h2>
+          <>
+            <div className="w-8 h-1 bg-slate-500 rounded-full mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white">Empate!</h2>
+          </>
         )}
-        {!trucoEscape && <p className="text-slate-500 text-xs mt-1">Carta com maior valor vence</p>}
       </div>
 
-      {/* Cartas jogadas — omitidas em fuga de truco */}
-      {!trucoEscape && (
-      <div className="flex flex-col gap-3 mb-6">
-        <h3 className="text-xs uppercase tracking-widest text-party-violet font-semibold">
-          Cartas desta rodada
-        </h3>
-        {sortedCards.map((c, i) => (
-          <ResultCard
-            key={c.id}
-            entry={c}
-            isWinner={winner && c.playedBy === winner.sessionId}
-            isMe={c.playedBy === player?.sessionId}
-            index={i}
-          />
-        ))}
-      </div>
+      {/* Cartas jogadas — ocultas quando alguém fugiu do Truco */}
+      {!trucoFled && sortedCards.length > 0 && (
+        <div className="flex flex-col gap-3 mb-6">
+          <h3 className="text-xs uppercase tracking-widest text-party-violet font-semibold">
+            Cartas desta rodada
+          </h3>
+          {sortedCards.map((c, i) => (
+            <ResultCard
+              key={c.id}
+              entry={c}
+              isWinner={winner && c.playedBy === winner.sessionId}
+              isMe={c.playedBy === player?.sessionId}
+              index={i}
+            />
+          ))}
+        </div>
       )}
 
       {/* Placar */}

@@ -45,11 +45,12 @@ export const SOCKET_EVENTS = {
   TURN_UPDATE:        'turn:update',
   HAND_UPDATE:        'hand:update',
   CARD_PLAYED:        'card:played',
-  PHASE_ROUND_RESULT: 'phase:round-result',
-  PHASE_GAME_OVER:    'phase:game-over',
-  PHASE_PLAYING:      'phase:playing',
-  TRUCO_CALLED:       'truco:called',
-  TRUCO_RESOLVED:     'truco:resolved',
+  PHASE_ROUND_RESULT:   'phase:round-result',
+  PHASE_GAME_OVER:      'phase:game-over',
+  PHASE_PLAYING:        'phase:playing',
+  // truco
+  PHASE_TRUCO_DECISION: 'phase:truco-decision',
+  TRUCO_RESULT:         'truco:result',
 };
 
 export const SESSION_KEY = 'top5party_session';
@@ -66,5 +67,6 @@ export const INITIAL_LOBBY_STATE = {
   totalRounds:      0,
   scores:           {},
   roundMultiplier:  1,
-  truco:            null,
+  trucoCaller:      null,
+  trucoState:       null,
 };

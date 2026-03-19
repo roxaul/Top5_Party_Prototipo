@@ -1,9 +1,14 @@
-const MEDALS = ['1º', '2º', '3º'];
+const POSITION_COLORS = [
+  'bg-yellow-400 text-black',
+  'bg-slate-300 text-black',
+  'bg-amber-600 text-white',
+];
 
 export default function GameOverPage({ result, player }) {
   if (!result) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh text-center px-8 gap-4">
+        <div className="w-10 h-1 bg-party-violet rounded-full animate-pulse" />
         <p className="text-white font-bold text-xl">Fim de jogo!</p>
       </div>
     );
@@ -17,6 +22,7 @@ export default function GameOverPage({ result, player }) {
 
       {/* Hero */}
       <div className="text-center mb-8">
+        <div className={`w-12 h-1.5 rounded-full mx-auto mb-5 ${isWinner ? 'bg-yellow-400' : 'bg-party-violet'}`} />
         <h1 className="text-3xl font-black text-white mb-1">
           {isWinner ? 'Você venceu!' : 'Fim de jogo!'}
         </h1>
@@ -40,7 +46,7 @@ export default function GameOverPage({ result, player }) {
 
         {scores.map((entry, i) => {
           const isMe = entry.sessionId === player?.sessionId;
-          const medal = MEDALS[i] ?? null;
+          const posColor = POSITION_COLORS[i] ?? 'bg-party-border text-slate-300';
           return (
             <div
               key={entry.sessionId}
@@ -61,9 +67,8 @@ export default function GameOverPage({ result, player }) {
               }}
             >
               {/* Posição */}
-              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xl
-                bg-party-bg border border-party-border">
-                <span className={`text-sm font-black ${i < 3 ? 'text-white' : 'text-slate-500'}`}>{medal}</span>
+              <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-black ${posColor}`}>
+                {i + 1}
               </div>
 
               {/* Nome */}

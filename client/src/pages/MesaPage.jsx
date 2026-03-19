@@ -248,7 +248,8 @@ export default function MesaPage() {
   const [gameOver, setGameOver]           = useState(null);
   const [trucoBanner, setTrucoBanner]     = useState(false);
   const [trucoCooldown, setTrucoCooldown] = useState(false);
-  const [trucoState, setTrucoState]       = useState(null); // { callerId, callerName, newMultiplier } | null
+  // trucoEvent: { type: 'pending'|'accepted', callerName, callerSessionId, label, proposedValue, accepterName, newMultiplier } | null
+  const [trucoEvent, setTrucoEvent]       = useState(null);
 
   // Estado da revelação sequencial
   const [revealedSet, setRevealedSet]     = useState(new Set());   // índices já revelados
@@ -272,7 +273,7 @@ export default function MesaPage() {
 
     socket.on('lobby:state',        s => setLobbyState(s));
     socket.on('lobby:update',       s => setLobbyState(s));
-    socket.on('game:started',       s => { setLobbyState(s); setCards([]); setRoundResult(null); });
+    socket.on('game:started',       s => { setLobbyState(s); setCards([]); setRoundResult(null); setTrucoEvent(null); });
     socket.on('phase:theme-select', s => setLobbyState(s?.lobbyState ?? s));
     socket.on('turn:update',        info => setTurnInfo(info));
 
@@ -280,7 +281,7 @@ export default function MesaPage() {
       setLobbyState(s);
       setCards([]);
       setRoundResult(null);
-      setTrucoState(null);
+      setTrucoEvent(null);
       setRevealedSet(new Set());
       setFlippingIndex(null);
       setRevealDone(false);
@@ -305,18 +306,33 @@ export default function MesaPage() {
 
     socket.on('phase:round-result', result => {
       setRoundResult(result);
-      setTrucoState(null);
+      setTrucoEvent(null);
       setLobbyState(prev => ({ ...prev, status: 'round-result', scores: result.scores }));
     });
     socket.on('phase:game-over',    result => setGameOver(result));
     socket.on('mesa:truco',         () => triggerTrucoBanner());
-    socket.on('truco:called',       data  => { setTrucoState(data); triggerTrucoBanner(); });
-    socket.on('truco:resolved',     ()    => setTrucoState(null));
+
+    // Truco: decisão pendente
+    socket.on('phase:truco-decision', data => {
+      setTrucoEvent({ type: 'pending', ...data });
+      if (data.lobbyState) setLobbyState(data.lobbyState);
+      triggerTrucoBanner();
+    });
+
+    // Truco: aceito
+    socket.on('truco:result', data => {
+      if (data.outcome === 'accepted') {
+        setTrucoEvent({ type: 'accepted', ...data });
+      } else {
+        setTrucoEvent(null);
+      }
+      if (data.lobbyState) setLobbyState(data.lobbyState);
+    });
 
     socket.on('room:reset', state => {
       setLobbyState(state ?? { players: [], status: 'lobby' });
       setCards([]); setTurnInfo(null); setRoundResult(null); setGameOver(null);
-      setTrucoState(null);
+      setTrucoEvent(null);
       setRevealedSet(new Set()); setFlippingIndex(null); setRevealDone(false);
     });
 
@@ -324,7 +340,7 @@ export default function MesaPage() {
       ['connect','disconnect','lobby:state','lobby:update','game:started','phase:playing',
        'phase:theme-select','turn:update','card:played','phase:round-result',
        'phase:game-over','mesa:truco','room:reset',
-       'truco:called','truco:resolved'].forEach(ev => socket.off(ev));
+       'phase:truco-decision','truco:result'].forEach(ev => socket.off(ev));
     };
   }, []);
 
@@ -517,6 +533,7 @@ export default function MesaPage() {
                 ))}
               </ul>
             </div>
+
             {(isPlaying || isResult) && (
               <div className="mt-auto">
                 <button onClick={handleTruco} disabled={trucoCooldown}
@@ -566,10 +583,10 @@ export default function MesaPage() {
               <div key={player.sessionId} className="absolute z-20"
                 style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}>
                 <PlayerSeat player={player}
-                  score={lobbyState.scores?.[player.sessionId] ?? 0}
+                  score={activeScores[player.sessionId] ?? 0}
                   isCurrentTurn={isPlaying && turnInfo?.currentTurn === player.sessionId}
                   showScore={isPlaying || isResult || isGameOver}
-                  isTrucoCaller={trucoState?.callerId === player.sessionId} />
+                  isTrucoCaller={trucoEvent?.type === 'pending' && trucoEvent?.callerSessionId === player.sessionId} />
               </div>
             );
           })}
@@ -642,14 +659,25 @@ export default function MesaPage() {
                 )}
 
                 {/* Banner de Truco pendente */}
-                {trucoState && isPlaying && (
+                {trucoEvent?.type === 'pending' && isPlaying && (
                   <div className="px-6 py-3 rounded-2xl border-2 border-red-500/60 bg-red-500/10 text-center backdrop-blur"
                     style={{ animation: 'fadeSlideDown 0.4s ease' }}>
                     <p className="text-red-400 font-black text-xl">
-                      {trucoState.callerName} pediu {trucoState.newMultiplier === 2 ? 'Truco' : 'Seis'}!
+                      {trucoEvent.callerName} pediu {trucoEvent.label ?? 'Truco'}!
                     </p>
                     <p className="text-slate-400 text-xs mt-1">
                       Aguardando resposta dos jogadores…
+                    </p>
+                  </div>
+                )}
+
+                {/* Banner de Truco aceito */}
+                {trucoEvent?.type === 'accepted' && (
+                  <div className="px-6 py-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 text-center backdrop-blur"
+                    style={{ animation: 'fadeSlideDown 0.4s ease' }}>
+                    <p className="text-emerald-300 font-bold text-base">
+                      <span className="text-white font-black">{trucoEvent.accepterName}</span> aceitou —
+                      rodada vale <span className="text-emerald-200 font-black">{trucoEvent.newMultiplier} pontos</span>!
                     </p>
                   </div>
                 )}

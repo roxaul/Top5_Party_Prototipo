@@ -1,9 +1,13 @@
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const path = require('path');
 const QRCode = require('qrcode');
+const db   = require('./db');
+const repo = require('./repository');
 
 const app = express();
 const server = http.createServer(app);
@@ -38,6 +42,16 @@ function shuffled(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// ─── Truco: progressão de valores ────────────────────────────────────────────
+// Normal → Truco → Seis → Nove → Doze
+const TRUCO_VALUES = [1, 3, 6, 9, 12];
+const TRUCO_LABELS = { 1: 'Normal', 3: 'Truco', 6: 'Seis', 9: 'Nove', 12: 'Doze' };
+
+function nextTrucoValue(current) {
+  const idx = TRUCO_VALUES.indexOf(current);
+  return idx >= 0 && idx < TRUCO_VALUES.length - 1 ? TRUCO_VALUES[idx + 1] : null;
 }
 
 // ─── Pool de perguntas/temas ──────────────────────────────────────────────────
@@ -128,8 +142,13 @@ const lobby = {
   roundNumber:        0,
   totalRounds:        0,
   // truco
-  roundMultiplier:    1,         // pontos em jogo na rodada: 1, 2 ou 4
-  truco:              null,      // null | { callerId, callerName, newMultiplier, responses: Map<sid,bool> }
+  roundMultiplier:    1,         // pontos em jogo na rodada atual (1, 3, 6, 9 ou 12)
+  trucoCaller:        null,      // sessionId de quem pediu
+  trucoProposedValue: null,      // valor proposto (próximo nível)
+  trucoState:         null,      // null | 'pending'
+  // persistência
+  roundHistory:       [],        // captura completa de cada rodada para salvar ao fim
+  currentGameId:      null,      // UUID retornado pelo banco após createGame
 };
 
 function connectedPlayers() {
@@ -158,11 +177,8 @@ function getLobbyState() {
     totalRounds:        lobby.totalRounds,
     scores:             Object.fromEntries(lobby.scores),
     roundMultiplier:    lobby.roundMultiplier,
-    truco: lobby.truco ? {
-      callerId:      lobby.truco.callerId,
-      callerName:    lobby.truco.callerName,
-      newMultiplier: lobby.truco.newMultiplier,
-    } : null,
+    trucoCaller:        lobby.trucoCaller,
+    trucoState:         lobby.trucoState,
   };
 }
 
@@ -193,7 +209,11 @@ function resetRoom() {
   lobby.roundNumber         = 0;
   lobby.totalRounds         = 0;
   lobby.roundMultiplier     = 1;
-  lobby.truco               = null;
+  lobby.trucoCaller         = null;
+  lobby.trucoProposedValue  = null;
+  lobby.trucoState          = null;
+  lobby.roundHistory        = [];
+  lobby.currentGameId       = null;
 }
 
 // ─── Montagem do baralho ──────────────────────────────────────────────────────
@@ -263,11 +283,13 @@ function endRound() {
     if (meta.rank > maxRank) { maxRank = meta.rank; winner = sid; }
   }
 
-  if (winner) lobby.scores.set(winner, (lobby.scores.get(winner) || 0) + lobby.roundMultiplier);
+  const pointsThisRound = lobby.roundMultiplier;
+  if (winner) lobby.scores.set(winner, (lobby.scores.get(winner) || 0) + pointsThisRound);
 
   const roundResult = {
     roundNumber: lobby.roundNumber + 1,
     totalRounds: lobby.totalRounds,
+    pointsWon:   pointsThisRound,
     // Cada entrada em formato JSON completo (pronto para persistência)
     cards: Array.from(lobby.roundCards.entries()).map(([sid, { card, meta }]) => ({
       id:         card.id,
@@ -286,8 +308,26 @@ function endRound() {
     ),
   };
 
+  // Captura histórico ANTES de limpar roundCards
+  lobby.roundHistory.push({
+    roundNumber:      lobby.roundNumber + 1,
+    winnerSessionId:  winner,
+    multiplier:       lobby.roundMultiplier,
+    trucoFled:        false,
+    cards: Array.from(lobby.roundCards.entries()).map(([sid, { card, meta }]) => ({
+      ownerSessionId:    meta.owner,
+      text:              meta.text,
+      rank:              meta.rank,
+      playedBySessionId: sid,
+    })),
+  });
+
   lobby.roundNumber++;
   lobby.roundCards.clear();
+  lobby.roundMultiplier    = 1;
+  lobby.trucoCaller        = null;
+  lobby.trucoProposedValue = null;
+  lobby.trucoState         = null;
   lobby.status = 'round-result';
 
   io.emit('phase:round-result', roundResult);
@@ -299,40 +339,14 @@ function endRound() {
   }, 5000);
 }
 
-// Fim de rodada por fuga do Truco — sem revelar cartas
-function endRoundTruco(callerId) {
-  const pointsAwarded = lobby.roundMultiplier; // stakes antes do truco ser aceito
-  if (callerId) lobby.scores.set(callerId, (lobby.scores.get(callerId) || 0) + pointsAwarded);
-
-  lobby.truco           = null;
-  lobby.roundMultiplier = 1;
-  lobby.roundNumber++;
-  lobby.roundCards.clear();
-  lobby.status = 'round-result';
-
-  io.emit('phase:round-result', {
-    roundNumber:    lobby.roundNumber,
-    totalRounds:    lobby.totalRounds,
-    cards:          [],   // sem revelação — ninguém fugiu de graça
-    winner:         callerId ? { sessionId: callerId, name: sessions.get(callerId)?.name ?? '?' } : null,
-    scores:         Object.fromEntries(lobby.scores),
-    playerNames:    Object.fromEntries(Array.from(sessions.entries()).map(([sid, s]) => [sid, s.name])),
-    trucoEscape:    true,
-    pointsAwarded,
-  });
-
-  setTimeout(() => {
-    if (lobby.status !== 'round-result') return;
-    if (lobby.roundNumber >= lobby.totalRounds) endGame();
-    else startNextRound();
-  }, 4000);
-}
 
 function startNextRound() {
-  lobby.status          = 'playing';
-  lobby.roundMultiplier = 1;
-  lobby.truco           = null;
-  lobby.currentTurn     = lobby.turnOrder[0];
+  lobby.status             = 'playing';
+  lobby.currentTurn        = lobby.turnOrder[0];
+  lobby.roundMultiplier    = 1;
+  lobby.trucoCaller        = null;
+  lobby.trucoProposedValue = null;
+  lobby.trucoState         = null;
   io.emit('phase:playing', getLobbyState());
   io.emit('turn:update', {
     currentTurn: lobby.currentTurn,
@@ -359,6 +373,71 @@ function endGame() {
       ? { sessionId: topPlayer, name: sessions.get(topPlayer)?.name ?? '?', score: topScore }
       : null,
   });
+
+  // Persiste a partida completa no banco (fire-and-forget)
+  if (db.isEnabled()) {
+    saveGameToDb().catch((err) => console.error('[DB] Erro ao salvar partida:', err.message));
+  }
+}
+
+// ─── Persistência da partida completa ────────────────────────────────────────
+//
+// Salva tudo ao fim do jogo, evitando complexidade de sincronização durante
+// as rodadas. Usa o histório em memória (lobby.roundHistory + lobby.rankings).
+//
+async function saveGameToDb() {
+  const playerIds = lobby.turnOrder;
+
+  // 1. Upsert jogadores e criar partida
+  for (const sid of playerIds) {
+    const name = sessions.get(sid)?.name ?? '?';
+    await repo.upsertPlayer(sid, name);
+  }
+
+  const gameId = await repo.createGame(playerIds.length);
+
+  // 2. Participantes com score final
+  for (const sid of playerIds) {
+    const name  = sessions.get(sid)?.name ?? '?';
+    const score = lobby.scores.get(sid) ?? 0;
+    await repo.addGamePlayer(gameId, sid, name, score);
+  }
+
+  // 3. Respostas do Top 5 — gera mapa cardKey → answerId para cruzar com rodadas
+  //    cardKey: "sessionId::answerText::rank"  (chave determinística em memória)
+  const answerIdMap = new Map();
+  for (const [sid, items] of lobby.rankings.entries()) {
+    const theme = lobby.selectedThemes.get(sid) ?? '?';
+    for (let i = 0; i < items.length; i++) {
+      const rank     = 5 - i;
+      const answerId = await repo.insertAnswer(gameId, sid, theme, items[i], rank);
+      answerIdMap.set(`${sid}::${items[i]}::${rank}`, answerId);
+    }
+  }
+
+  // 4. Rodadas + cartas jogadas
+  for (const round of lobby.roundHistory) {
+    const roundId = await repo.insertRound(
+      gameId, round.roundNumber, round.winnerSessionId,
+      round.multiplier, round.trucoFled,
+    );
+    for (const c of round.cards) {
+      const key      = `${c.ownerSessionId}::${c.text}::${c.rank}`;
+      const answerId = answerIdMap.get(key);
+      if (answerId) {
+        await repo.insertRoundCard(roundId, answerId, c.playedBySessionId);
+      }
+    }
+  }
+
+  // 5. Finaliza partida com vencedor
+  let topScore = -1, topPlayer = null;
+  for (const [sid, score] of lobby.scores.entries()) {
+    if (score > topScore) { topScore = score; topPlayer = sid; }
+  }
+  await repo.finalizeGame(gameId, topPlayer);
+
+  console.log(`[DB] Partida ${gameId} salva — ${lobby.roundHistory.length} rodadas, ${playerIds.length} jogadores`);
 }
 
 // ─── Avança turno (pula desconectados) ────────────────────────────────────────
@@ -449,6 +528,13 @@ io.on('connection', (socket) => {
       socket.data.sessionId = sid;
       socket.join('players');
       socket.emit('player:joined', { sessionId: sid, name: sanitizedName });
+
+      // Registra jogador no banco (fire-and-forget)
+      if (db.isEnabled()) {
+        repo.upsertPlayer(sid, sanitizedName).catch((err) =>
+          console.error('[DB] upsertPlayer:', err.message)
+        );
+      }
     }
 
     broadcastLobbyUpdate();
@@ -532,7 +618,7 @@ io.on('connection', (socket) => {
     if (!sid || !sessions.has(sid)) return;
     if (lobby.status !== 'playing') return;
     if (sid !== lobby.currentTurn) return;
-    if (lobby.truco !== null) return; // aguardando resposta do truco
+    if (lobby.trucoState === 'pending') return; // aguardando resposta do truco
 
     const session  = sessions.get(sid);
     const cardIndex = session.hand.findIndex((c) => c.id === cardId);
@@ -555,6 +641,140 @@ io.on('connection', (socket) => {
     advanceTurn(sid);
   });
 
+  // ── Jogador pede Truco ────────────────────────────────────────────────────
+  socket.on('truco:call', () => {
+    const sid = socket.data.sessionId;
+    if (!sid || !sessions.has(sid)) return;
+    if (lobby.status !== 'playing') return;
+    if (lobby.trucoState === 'pending') return;   // já há uma decisão pendente
+
+    const proposed = nextTrucoValue(lobby.roundMultiplier);
+    if (!proposed) return;  // já está no máximo (12)
+
+    lobby.trucoCaller        = sid;
+    lobby.trucoProposedValue = proposed;
+    lobby.trucoState         = 'pending';
+
+    const callerName = sessions.get(sid)?.name ?? '?';
+    const label      = TRUCO_LABELS[proposed] ?? String(proposed);
+    console.log(`[TRUCO] ${callerName} pediu ${label}! ${lobby.roundMultiplier} → ${proposed}`);
+
+    io.emit('phase:truco-decision', {
+      callerSessionId: sid,
+      callerName,
+      currentValue:    lobby.roundMultiplier,
+      proposedValue:   proposed,
+      label,
+      lobbyState:      getLobbyState(),
+    });
+  });
+
+  // ── Jogador responde ao Truco ─────────────────────────────────────────────
+  socket.on('truco:respond', ({ response }) => {
+    const sid = socket.data.sessionId;
+    if (!sid || !sessions.has(sid)) return;
+    if (lobby.trucoState !== 'pending') return;
+    if (sid === lobby.trucoCaller) return;  // quem pediu não pode responder
+
+    const responderName = sessions.get(sid)?.name ?? '?';
+
+    if (response === 'flee') {
+      // Quem pediu Truco leva os pontos do nível ATUAL (antes da oferta)
+      const caller     = lobby.trucoCaller;
+      const points     = lobby.roundMultiplier;
+      lobby.scores.set(caller, (lobby.scores.get(caller) || 0) + points);
+
+      const callerName = sessions.get(caller)?.name ?? '?';
+      console.log(`[TRUCO] ${responderName} fugiu! ${callerName} leva ${points} ponto(s)`);
+
+      // Captura histórico da rodada encerrada por fuga do Truco
+      lobby.roundHistory.push({
+        roundNumber:     lobby.roundNumber + 1,
+        winnerSessionId: caller,
+        multiplier:      points,
+        trucoFled:       true,
+        cards:           [],
+      });
+
+      lobby.roundMultiplier    = 1;
+      lobby.trucoCaller        = null;
+      lobby.trucoProposedValue = null;
+      lobby.trucoState         = null;
+      lobby.roundNumber++;
+      lobby.roundCards.clear();
+      lobby.status = 'round-result';
+
+      io.emit('phase:round-result', {
+        roundNumber: lobby.roundNumber,
+        totalRounds: lobby.totalRounds,
+        pointsWon:   points,
+        cards:       [],
+        winner:      { sessionId: caller, name: callerName },
+        scores:      Object.fromEntries(lobby.scores),
+        playerNames: Object.fromEntries(Array.from(sessions.entries()).map(([s, v]) => [s, v.name])),
+        trucoFled:   true,
+        fledBy:      responderName,
+      });
+
+      setTimeout(() => {
+        if (lobby.status !== 'round-result') return;
+        if (lobby.roundNumber >= lobby.totalRounds) endGame();
+        else startNextRound();
+      }, 5000);
+
+    } else if (response === 'accept') {
+      lobby.roundMultiplier    = lobby.trucoProposedValue;
+      lobby.trucoCaller        = null;
+      lobby.trucoProposedValue = null;
+      lobby.trucoState         = null;
+
+      console.log(`[TRUCO] ${responderName} aceitou! Multiplicador: ${lobby.roundMultiplier}`);
+
+      io.emit('truco:result', {
+        outcome:       'accepted',
+        accepterName:  responderName,
+        newMultiplier: lobby.roundMultiplier,
+        label:         TRUCO_LABELS[lobby.roundMultiplier] ?? String(lobby.roundMultiplier),
+        lobbyState:    getLobbyState(),
+      });
+
+    } else if (response === 'six') {
+      // Contra-oferta: o papel de quem pede se inverte
+      const nextNext = nextTrucoValue(lobby.trucoProposedValue);
+      if (!nextNext) {
+        // Máximo atingido → equivalente a aceitar
+        lobby.roundMultiplier    = lobby.trucoProposedValue;
+        lobby.trucoCaller        = null;
+        lobby.trucoProposedValue = null;
+        lobby.trucoState         = null;
+        io.emit('truco:result', {
+          outcome:       'accepted',
+          accepterName:  responderName,
+          newMultiplier: lobby.roundMultiplier,
+          label:         TRUCO_LABELS[lobby.roundMultiplier] ?? String(lobby.roundMultiplier),
+          lobbyState:    getLobbyState(),
+        });
+        return;
+      }
+
+      lobby.trucoCaller        = sid;  // quem contra-ofertou agora é o "chamador"
+      lobby.trucoProposedValue = nextNext;
+      // trucoState permanece 'pending'
+
+      const newLabel = TRUCO_LABELS[nextNext] ?? String(nextNext);
+      console.log(`[TRUCO] ${responderName} contra-ofertou: ${newLabel}!`);
+
+      io.emit('phase:truco-decision', {
+        callerSessionId: sid,
+        callerName:      responderName,
+        currentValue:    lobby.roundMultiplier,
+        proposedValue:   nextNext,
+        label:           newLabel,
+        lobbyState:      getLobbyState(),
+      });
+    }
+  });
+
   // ── Mesa transfere o host ─────────────────────────────────────────────────
   socket.on('host:transfer', ({ sessionId }) => {
     if (socket.id !== lobby.hostSocketId) return;
@@ -562,76 +782,6 @@ io.on('connection', (socket) => {
     lobby.hostPlayerId = sessionId;
     console.log(`[HOST] Transferido para ${sessions.get(sessionId).name}`);
     broadcastLobbyUpdate();
-  });
-
-  // ── Jogador pede Truco / Seis ─────────────────────────────────────────────
-  socket.on('truco:call', () => {
-    const sid = socket.data.sessionId;
-    if (!sid || !sessions.has(sid)) return;
-    if (lobby.status !== 'playing') return;
-    if (lobby.truco !== null) return;           // já há truco pendente
-    if (lobby.roundMultiplier >= 4) return;     // limite atingido
-
-    const newMultiplier = lobby.roundMultiplier === 1 ? 2 : 4;
-    lobby.truco = {
-      callerId:   sid,
-      callerName: sessions.get(sid).name,
-      newMultiplier,
-      responses:  new Map(),
-    };
-
-    console.log(`[TRUCO] ${sessions.get(sid).name} pediu ${newMultiplier === 2 ? 'Truco' : 'Seis'}! (rodada vale ${newMultiplier})`);
-
-    io.emit('truco:called', {
-      callerId:          sid,
-      callerName:        lobby.truco.callerName,
-      currentMultiplier: lobby.roundMultiplier,
-      newMultiplier,
-    });
-    broadcastLobbyUpdate();
-  });
-
-  // ── Jogador responde ao Truco ─────────────────────────────────────────────
-  socket.on('truco:respond', ({ accept }) => {
-    const sid = socket.data.sessionId;
-    if (!sid || !sessions.has(sid)) return;
-    if (!lobby.truco) return;
-    if (sid === lobby.truco.callerId) return;   // caller não pode responder
-    if (lobby.truco.responses.has(sid)) return; // já respondeu
-
-    lobby.truco.responses.set(sid, !!accept);
-
-    if (!accept) {
-      // Fugiu — caller leva os pontos atuais sem revelar cartas
-      const { callerId, callerName, newMultiplier: nm } = lobby.truco;
-      console.log(`[TRUCO] ${sessions.get(sid).name} fugiu → ${callerName} leva ${lobby.roundMultiplier} ponto(s)`);
-      io.emit('truco:resolved', {
-        accepted:          false,
-        fleeingPlayerName: sessions.get(sid).name,
-        callerName,
-        newMultiplier:     nm,
-      });
-      endRoundTruco(callerId);
-      return;
-    }
-
-    // Verifica se todos os conectados (exceto o caller) já aceitaram
-    const { callerId: cid, callerName: cname, newMultiplier: nm2 } = lobby.truco;
-    const nonCallers  = connectedPlayers().filter(p => p.sessionId !== cid);
-    const allAccepted = nonCallers.every(p => lobby.truco.responses.get(p.sessionId) === true);
-
-    if (allAccepted) {
-      lobby.roundMultiplier = nm2;
-      lobby.truco           = null;
-      console.log(`[TRUCO] Aceito por todos! Rodada vale ${nm2} ponto(s)`);
-      io.emit('truco:resolved', {
-        accepted:      true,
-        callerName:    cname,
-        newMultiplier: nm2,
-      });
-      broadcastLobbyUpdate();
-    }
-    // else: ainda aguardando outros responderem
   });
 
   // ── TRUCO cosmético da Mesa ───────────────────────────────────────────────
@@ -660,25 +810,16 @@ io.on('connection', (socket) => {
 
       reassignHostIfNeeded(sid);
 
-      // Truco pendente: caller desconectou → cancela truco; responder desconectou → re-verifica
-      if (lobby.truco) {
-        if (lobby.truco.callerId === sid) {
-          lobby.truco = null;
-          io.emit('truco:resolved', { accepted: false, cancelled: true, newMultiplier: lobby.roundMultiplier });
+      // Truco pendente: caller desconectou → cancela; responder desconectou → truco continua
+      if (lobby.trucoState === 'pending') {
+        if (lobby.trucoCaller === sid) {
+          lobby.trucoCaller        = null;
+          lobby.trucoProposedValue = null;
+          lobby.trucoState         = null;
+          io.emit('truco:result', { outcome: 'cancelled', lobbyState: getLobbyState() });
           broadcastLobbyUpdate();
-        } else {
-          // Desconectado é como ter aceitado (não pode mais fugir)
-          lobby.truco.responses.set(sid, true);
-          const nonCallers  = connectedPlayers().filter(p => p.sessionId !== lobby.truco.callerId);
-          const allAccepted = nonCallers.every(p => lobby.truco.responses.get(p.sessionId) === true);
-          if (allAccepted) {
-            const { callerId: cid, callerName: cname, newMultiplier: nm } = lobby.truco;
-            lobby.roundMultiplier = nm;
-            lobby.truco           = null;
-            io.emit('truco:resolved', { accepted: true, callerName: cname, newMultiplier: nm });
-            broadcastLobbyUpdate();
-          }
         }
+        // se é um responder que desconectou, o truco continua pendente
       }
 
       if (lobby.status === 'playing' && lobby.currentTurn === sid) {
@@ -704,6 +845,9 @@ io.on('connection', (socket) => {
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
+
+// Inicia conexão com o banco (não bloqueia o servidor se falhar)
+db.connect();
 
 server.listen(PORT, '0.0.0.0', async () => {
   const ip  = getLocalIP();
