@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
 const LABELS = [
-  { pos: '1º', label: 'Favorito absoluto', emoji: '🥇', border: 'border-yellow-400/70',  bg: 'bg-yellow-400/5'  },
-  { pos: '2º', label: 'Logo depois',       emoji: '🥈', border: 'border-slate-400/60',   bg: 'bg-slate-400/5'   },
-  { pos: '3º', label: 'No meio',           emoji: '🥉', border: 'border-amber-600/60',   bg: 'bg-amber-600/5'   },
-  { pos: '4º', label: 'Quase no fim',      emoji: '4️⃣', border: 'border-party-border',   bg: ''                 },
-  { pos: '5º', label: 'Menos favorito',    emoji: '5️⃣', border: 'border-party-border',   bg: ''                 },
+  { pos: '1º', label: 'Favorito absoluto', border: 'border-yellow-400/70',  bg: 'bg-yellow-400/5'  },
+  { pos: '2º', label: 'Logo depois',       border: 'border-slate-400/60',   bg: 'bg-slate-400/5'   },
+  { pos: '3º', label: 'No meio',           border: 'border-amber-600/60',   bg: 'bg-amber-600/5'   },
+  { pos: '4º', label: 'Quase no fim',      border: 'border-party-border',   bg: ''                 },
+  { pos: '5º', label: 'Menos favorito',    border: 'border-party-border',   bg: ''                 },
 ];
 
 // Cada item tem um id estável para que o React mantenha o foco correto
@@ -48,12 +48,6 @@ export default function RankingPage({ theme, lobbyState, onSubmitRanking, mySess
     const pct = rankingsTotal > 0 ? (rankingsSubmitted / rankingsTotal) * 100 : 0;
     return (
       <div className="flex flex-col items-center justify-center min-h-svh px-6 text-center gap-5">
-        {/* Ícone celebrativo */}
-        <div className="relative">
-          <div className="text-6xl">🏆</div>
-          <div className="absolute -top-1 -right-2 text-2xl">✅</div>
-        </div>
-
         <div>
           <h2 className="text-2xl font-bold text-party-violet">Top 5 enviado!</h2>
           <p className="text-slate-400 text-sm mt-1">Aguardando os outros jogadores...</p>
@@ -103,7 +97,6 @@ export default function RankingPage({ theme, lobbyState, onSubmitRanking, mySess
     <div className="flex flex-col min-h-svh pt-8 px-6 pb-8-safe">
       {/* Header com tema fixo */}
       <div className="text-center mb-5">
-        <div className="text-3xl mb-2">🏆</div>
         <h2 className="text-xl font-bold text-party-violet">Monte seu Top 5</h2>
         <div className="mt-2 bg-party-surface border border-party-purple/40 rounded-xl px-4 py-2 inline-block max-w-full">
           <p className="text-white font-semibold text-sm">{theme}</p>
@@ -123,7 +116,7 @@ export default function RankingPage({ theme, lobbyState, onSubmitRanking, mySess
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
         {items.map((item, index) => {
-          const { label, emoji, border, bg } = LABELS[index];
+          const { pos, label, border, bg } = LABELS[index];
           const isFilled = item.value.trim() !== '';
           return (
             <div
@@ -133,8 +126,8 @@ export default function RankingPage({ theme, lobbyState, onSubmitRanking, mySess
                 ${isFilled ? `${border} ${bg}` : 'border-party-border bg-party-surface'}
               `}
             >
-              {/* Emoji de posição */}
-              <span className="text-xl flex-shrink-0 py-3">{emoji}</span>
+              {/* Posição */}
+              <span className="text-xs font-black text-slate-500 flex-shrink-0 w-6 text-center py-3">{pos}</span>
 
               {/* Input */}
               <input
@@ -184,7 +177,7 @@ export default function RankingPage({ theme, lobbyState, onSubmitRanking, mySess
             transition-all duration-150
           "
         >
-          {allFilled ? '🚀 Enviar Top 5' : `Preencha todos os ${LABELS.length} campos`}
+          {allFilled ? 'Enviar Top 5' : `Preencha todos os ${LABELS.length} campos`}
         </button>
       </form>
 

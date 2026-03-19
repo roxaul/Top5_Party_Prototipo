@@ -1,8 +1,38 @@
-# 🎮 Top 5 Party
+# Top 5 Party
 
 > **"Você acha que conhece as preferências dos seus amigos? Prove."**
 
 Top 5 Party é um **party game multiplayer local** onde cada jogador usa o próprio celular como controle — sem instalar nada. O PC ou Steam Deck vira a tela central do jogo. Basta estar na mesma rede Wi-Fi.
+
+---
+
+## Screenshots
+
+### Mesa (PC / TV)
+
+A tela da Mesa exibe uma **mesa oval de jogo** com os avatares dos jogadores distribuídos ao redor, cartas em leque no centro e placar lateral — projetada para ser lida a distância em uma TV.
+
+| Lobby | Partida em andamento |
+|-------|----------------------|
+| ![Mesa lobby](docs/screenshots/mesa-lobby.png) | ![Mesa playing](docs/screenshots/mesa-playing.png) |
+
+| Resultado da rodada | Fim de jogo |
+|---------------------|-------------|
+| ![Mesa round result](docs/screenshots/mesa-round-result.png) | ![Mesa game over](docs/screenshots/mesa-game-over.png) |
+
+### Mão (celular)
+
+Os jogadores usam o celular como controle. Design sem emojis, focado em legibilidade.
+
+| Entrar | Lobby | Escolha de pergunta |
+|--------|-------|---------------------|
+| ![Join](docs/screenshots/mobile-join.png) | ![Lobby](docs/screenshots/mobile-lobby.png) | ![Theme select](docs/screenshots/mobile-theme-select.png) |
+
+| Montar Top 5 | Mão de cartas | Resultado |
+|--------------|---------------|-----------|
+| ![Ranking](docs/screenshots/mobile-ranking.png) | ![Hand](docs/screenshots/mobile-hand.png) | ![Result](docs/screenshots/mobile-round-result.png) |
+
+> Screenshots devem ser adicionados em `docs/screenshots/`. Resolução sugerida: 1280x720 para Mesa, 390x844 para Mobile.
 
 ---
 
@@ -16,7 +46,20 @@ A mecânica central é de **vazas por turno** (trick-taking): cada jogador joga 
 
 O segredo está em saber o que seu amigo colocou como favorito — e jogar na hora certa.
 
-### O Twist: a Aposta *(planejado)*
+### O Twist: Truco
+
+A qualquer momento durante o jogo, um jogador pode apertar o botão de **Truco** no celular. O jogo pausa. Os outros jogadores recebem um pop-up: **Aceitar** ou **Fugir**.
+
+- Se **fugirem**: quem pediu leva os pontos da rodada na hora — sem revelar as cartas.
+- Se **aceitarem**: a rodada passa a valer o dobro. Quem tiver coragem pode pedir **Seis** e dobrar de novo.
+
+| Situação | Pontos em jogo |
+|----------|----------------|
+| Normal | 1 |
+| Truco aceito | 2 |
+| Seis aceito | 4 |
+
+### A Aposta *(planejado)*
 
 Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acertou? Bônus de pontos. Errou? Penalidade. Isso transforma cada jogada num momento de tensão social: *"Isso aqui parece coisa do João... ou será da Mari?"*
 
@@ -64,10 +107,14 @@ Antes de jogar uma carta, o jogador pode **apostar na identidade do dono**. Acer
 │  7. Rodada de VAZAS começa — turnos em ordem                 │
 │     └── A Mesa indica de quem é a vez                        │
 │     └── Só quem está no turno pode jogar                     │
-│     └── Maior rank vence a rodada → +1 ponto                 │
+│     └── Qualquer jogador pode pedir TRUCO a qualquer momento │
+│          ├── Aceito: rodada vale o dobro                     │
+│          └── Fuga: caller leva os pontos, sem revelar cartas │
+│     └── Maior rank vence a rodada → pontos × multiplicador   │
 │                                                              │
-│  8. RESULTADO da rodada: rank revelado para todos            │
-│     └── Placar atualizado, próxima rodada em 5 segundos      │
+│  8. RESULTADO da rodada: cartas reveladas uma a uma          │
+│     └── Vencedor brilha, +N sobe no placar                   │
+│     └── Próxima rodada em 5 segundos                         │
 │                                                              │
 │  9. Após todas as rodadas → VENCEDOR anunciado               │
 └─────────────────────────────────────────────────────────────┘
@@ -157,15 +204,19 @@ Camada Node.js + React completamente implementada:
 - [x] **Cartas com 3 campos**: Pergunta | Resposta | Respondeu (formato JSON pronto para banco)
 - [x] Distribuição aleatória de cartas entre os jogadores
 - [x] **Turnos controlados**: só quem está no turno pode jogar; Mesa indica a vez em tempo real
-- [x] **Pontuação por rodada**: maior rank ganha a vaza (+1 ponto)
-- [x] **Tela de resultado por rodada**: rank revelado, placar atualizado
+- [x] **Mecânica de Truco completa**: chamada do celular, overlay de decisão, multiplicador 1→2→4, fuga sem revelar cartas, escalada para Seis
+- [x] **Pontuação por rodada com multiplicador**: maior rank ganha a vaza (+1×, +2× ou +4×)
+- [x] **Revelação sequencial de cartas**: cartas caem face-down, reveladas uma a uma com flip animation; vencedor pulsa dourado; +N flutua no placar
+- [x] **Tela de resultado por rodada**: resultado normal ou por fuga do Truco
 - [x] **Tela de Game Over** com pódio final e vencedor
-- [x] Mesa React com QR code, lista de jogadores, indicador de turno e placar ao vivo
+- [x] Mesa React com QR code, avatares ao redor da mesa oval, indicador de turno e placar ao vivo
 - [x] Placar compacto visível na mão do jogador durante o jogo
 - [x] Layout responsivo: portrait no celular, landscape no PC/tablet
 - [x] Suporte a safe-area iOS (notch, barra home) e 100svh
+- [x] **Mesa com layout de mesa oval** — avatares ao redor, cartas em leque (160×222 px), sidebar de placar
+- [x] **Botão TRUCO! cosmético** na Mesa com cooldown e overlay fullscreen animado
+- [x] Design sem emojis — texto limpo em todas as telas
 - [ ] Mecânica de aposta (adivinhar o dono da carta antes de jogar)
-- [ ] Fase de revelação com animação dramática
 - [ ] Integração Unity como Mesa
 - [ ] Busca de imagens por carta + cache local + shaders
 
@@ -188,7 +239,7 @@ npm start
 | `http://IP:3000/mesa` | PC / TV — tela da Mesa (QR code + cartas + placar) |
 | `http://IP:3000` | Celular — escaneie o QR Code para entrar |
 
-> ⚠️ Sempre que alterar código do cliente, rode `npm run build:client` antes de reiniciar o servidor.
+> Sempre que alterar código do cliente, rode `npm run build:client` antes de reiniciar o servidor.
 
 ### Modo desenvolvimento
 
@@ -225,7 +276,11 @@ taskkill /IM node.exe /F
 
 | Situação | Pontos |
 |----------|--------|
-| Carta com maior rank na rodada | +1 ponto para quem jogou |
+| Carta com maior rank (rodada normal) | +1 ponto |
+| Carta com maior rank (Truco aceito) | +2 pontos |
+| Carta com maior rank (Seis aceito) | +4 pontos |
+| Adversário foge do Truco | +1 ponto ao caller (sem revelar cartas) |
+| Adversário foge do Seis | +2 pontos ao caller (sem revelar cartas) |
 | Empate (mesmo rank) | Ninguém ganha ponto |
 | Adivinhar o dono da carta *(planejado)* | +bônus |
 | Errar a aposta *(planejado)* | −penalidade |

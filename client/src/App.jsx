@@ -13,7 +13,9 @@ export default function App() {
     screen, player, lobbyState, hand, connected, isHost,
     roundResult, gameOver, turnInfo, isMyTurn,
     myThemeOptions, mySelectedTheme,
+    trucoState,
     joinGame, startGame, selectTheme, submitRanking, playCard,
+    callTruco, respondTruco,
   } = useGameSocket();
 
   return (
@@ -60,6 +62,9 @@ export default function App() {
           isMyTurn={isMyTurn}
           lobbyState={lobbyState}
           onPlayCard={playCard}
+          trucoState={trucoState}
+          onCallTruco={callTruco}
+          onRespondTruco={respondTruco}
         />
       )}
       {screen === SCREEN.ROUND_RESULT && (

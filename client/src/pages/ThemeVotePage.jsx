@@ -24,7 +24,6 @@ export default function ThemeVotePage({ lobbyState, player, isHost, onVote, onFo
   if (myVote !== null) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh px-6 text-center gap-6">
-        <div className="text-6xl">🗳️</div>
         <div>
           <h2 className="text-2xl font-bold text-party-violet">Voto registrado!</h2>
           <p className="text-slate-400 text-sm mt-1">Aguardando os outros votarem...</p>
@@ -83,7 +82,6 @@ export default function ThemeVotePage({ lobbyState, player, isHost, onVote, onFo
     <div className="flex flex-col min-h-svh px-5 py-8">
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="text-4xl mb-2">🗳️</div>
         <h2 className="text-xl font-bold text-party-violet">Vote no Tema</h2>
         <p className="text-slate-400 text-sm mt-1">
           Escolha o tema que mais curtir — o mais votado vence!

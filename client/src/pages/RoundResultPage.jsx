@@ -27,7 +27,6 @@ function ResultCard({ entry, isWinner, isMe, index }) {
           <span className={`text-xs leading-none ${RANK_COLOR[entry.rank] || 'text-slate-400'}`}>
             {RANK_STARS[entry.rank]}
           </span>
-          {isWinner && <span className="text-base mt-1">🏆</span>}
         </div>
 
         {/* Conteúdo: os 3 campos */}
@@ -66,13 +65,12 @@ export default function RoundResultPage({ result, player, lobbyState }) {
   if (!result) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh text-center px-8 gap-4">
-        <div className="text-5xl animate-pulse">⏳</div>
         <p className="text-white font-bold text-xl">Calculando resultado...</p>
       </div>
     );
   }
 
-  const { roundNumber, totalRounds, cards = [], winner, scores = {}, playerNames = {} } = result;
+  const { roundNumber, totalRounds, cards = [], winner, scores = {}, playerNames = {}, trucoEscape, pointsAwarded } = result;
   const isWinner = winner?.sessionId === player?.sessionId;
 
   const sortedCards = [...cards].sort((a, b) => b.rank - a.rank);
@@ -85,26 +83,32 @@ export default function RoundResultPage({ result, player, lobbyState }) {
         <p className="text-xs uppercase tracking-widest text-party-violet font-semibold mb-1">
           Rodada {roundNumber} de {totalRounds}
         </p>
-        {winner ? (
+        {trucoEscape ? (
           <>
-            <div className="text-5xl mb-2">{isWinner ? '🏆' : '🎉'}</div>
             <h2 className="text-2xl font-bold text-white">
               {isWinner
-                ? 'Você ganhou a rodada!'
-                : <><span className="text-party-violet">{winner.name}</span> ganhou!</>
-              }
+                ? 'Adversário fugiu do Truco!'
+                : <><span className="text-red-400">{winner?.name ?? 'Alguém'}</span> venceu por fuga!</>}
             </h2>
+            <p className="text-yellow-400 text-sm mt-1 font-semibold">
+              +{pointsAwarded} ponto{pointsAwarded > 1 ? 's' : ''} sem revelar cartas
+            </p>
           </>
+        ) : winner ? (
+          <h2 className="text-2xl font-bold text-white">
+            {isWinner
+              ? 'Você ganhou a rodada!'
+              : <><span className="text-party-violet">{winner.name}</span> ganhou!</>
+            }
+          </h2>
         ) : (
-          <>
-            <div className="text-5xl mb-2">🤝</div>
-            <h2 className="text-2xl font-bold text-white">Empate!</h2>
-          </>
+          <h2 className="text-2xl font-bold text-white">Empate!</h2>
         )}
-        <p className="text-slate-500 text-xs mt-1">Carta com maior valor vence</p>
+        {!trucoEscape && <p className="text-slate-500 text-xs mt-1">Carta com maior valor vence</p>}
       </div>
 
-      {/* Cartas jogadas */}
+      {/* Cartas jogadas — omitidas em fuga de truco */}
+      {!trucoEscape && (
       <div className="flex flex-col gap-3 mb-6">
         <h3 className="text-xs uppercase tracking-widest text-party-violet font-semibold">
           Cartas desta rodada
@@ -119,6 +123,7 @@ export default function RoundResultPage({ result, player, lobbyState }) {
           />
         ))}
       </div>
+      )}
 
       {/* Placar */}
       <div className="bg-party-surface border border-party-border rounded-2xl px-5 py-4">

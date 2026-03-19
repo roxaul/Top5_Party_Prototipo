@@ -1,9 +1,9 @@
 import WaitingDots from '../components/WaitingDots';
 
 const OPTION_STYLES = [
-  { border: 'border-party-purple',  bg: 'bg-party-purple/15',  numBg: 'bg-party-purple',  emoji: '🎯' },
-  { border: 'border-yellow-400',    bg: 'bg-yellow-400/15',    numBg: 'bg-yellow-500',    emoji: '⭐' },
-  { border: 'border-emerald-400',   bg: 'bg-emerald-400/15',   numBg: 'bg-emerald-500',   emoji: '🎲' },
+  { border: 'border-party-purple',  bg: 'bg-party-purple/15',  numBg: 'bg-party-purple'  },
+  { border: 'border-yellow-400',    bg: 'bg-yellow-400/15',    numBg: 'bg-yellow-500'    },
+  { border: 'border-emerald-400',   bg: 'bg-emerald-400/15',   numBg: 'bg-emerald-500'   },
 ];
 
 export default function ThemeSelectPage({ options = [], selectedTheme, lobbyState, player, onSelect }) {
@@ -16,7 +16,6 @@ export default function ThemeSelectPage({ options = [], selectedTheme, lobbyStat
   if (selectedTheme) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh px-6 text-center gap-6">
-        <div className="text-6xl">✅</div>
         <div>
           <h2 className="text-2xl font-bold text-party-violet">Tema escolhido!</h2>
           <p className="text-slate-400 text-sm mt-1">Aguardando os outros escolherem...</p>
@@ -73,7 +72,6 @@ export default function ThemeSelectPage({ options = [], selectedTheme, lobbyStat
 
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="text-4xl mb-2">🎯</div>
         <h2 className="text-xl font-bold text-party-violet">Escolha sua Pergunta</h2>
         <p className="text-slate-400 text-sm mt-1">
           Essas são <span className="text-white font-semibold">suas 3 perguntas exclusivas</span>.
@@ -127,7 +125,6 @@ export default function ThemeSelectPage({ options = [], selectedTheme, lobbyStat
                   </p>
                 </div>
 
-                <span className="text-2xl flex-shrink-0 self-center">{s.emoji}</span>
               </div>
             </button>
           );

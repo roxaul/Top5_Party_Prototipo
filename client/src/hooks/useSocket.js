@@ -18,6 +18,8 @@ export function useGameSocket() {
   // Opções de tema personalizadas (3 únicas por jogador)
   const [myThemeOptions, setMyThemeOptions] = useState([]);
   const [mySelectedTheme, setMySelectedTheme] = useState(null);
+  // { callerId, callerName, currentMultiplier, newMultiplier } | null
+  const [trucoState, setTrucoState] = useState(null);
 
   useEffect(() => {
     socket.connect();
@@ -96,6 +98,9 @@ export function useGameSocket() {
       setScreen(SCREEN.GAME_OVER);
     });
 
+    socket.on(SOCKET_EVENTS.TRUCO_CALLED, (data) => setTrucoState(data));
+    socket.on(SOCKET_EVENTS.TRUCO_RESOLVED, () => setTrucoState(null));
+
     socket.on(SOCKET_EVENTS.ROOM_RESET, () => {
       storage.removeItem(SESSION_KEY);
       setPlayer(null);
@@ -106,6 +111,7 @@ export function useGameSocket() {
       setTurnInfo(null);
       setMyThemeOptions([]);
       setMySelectedTheme(null);
+      setTrucoState(null);
       setScreen(SCREEN.JOIN);
     });
 
@@ -118,6 +124,7 @@ export function useGameSocket() {
         SOCKET_EVENTS.PHASE_PLAYING,      SOCKET_EVENTS.TURN_UPDATE,
         SOCKET_EVENTS.HAND_UPDATE,        SOCKET_EVENTS.PHASE_ROUND_RESULT,
         SOCKET_EVENTS.PHASE_GAME_OVER,    SOCKET_EVENTS.ROOM_RESET,
+        SOCKET_EVENTS.TRUCO_CALLED,       SOCKET_EVENTS.TRUCO_RESOLVED,
       ].forEach((ev) => socket.off(ev));
     };
   }, []);
@@ -148,8 +155,10 @@ export function useGameSocket() {
     socket.emit(SOCKET_EVENTS.THEME_SELECT, { theme });
   }
 
-  function submitRanking(items) { socket.emit(SOCKET_EVENTS.RANKING_SUBMIT, { items }); }
-  function playCard(cardId)     { socket.emit(SOCKET_EVENTS.CARD_PLAY,      { cardId }); }
+  function submitRanking(items)  { socket.emit(SOCKET_EVENTS.RANKING_SUBMIT, { items }); }
+  function playCard(cardId)      { socket.emit(SOCKET_EVENTS.CARD_PLAY,      { cardId }); }
+  function callTruco()           { socket.emit(SOCKET_EVENTS.TRUCO_CALL); }
+  function respondTruco(accept)  { socket.emit(SOCKET_EVENTS.TRUCO_RESPOND,  { accept }); }
 
   const isHost   = player?.sessionId === lobbyState.hostPlayerId;
   const isMyTurn = turnInfo?.currentTurn === player?.sessionId;
@@ -158,6 +167,8 @@ export function useGameSocket() {
     screen, player, lobbyState, hand, connected, isHost,
     roundResult, gameOver, turnInfo, isMyTurn,
     myThemeOptions, mySelectedTheme,
+    trucoState,
     joinGame, startGame, selectTheme, submitRanking, playCard,
+    callTruco, respondTruco,
   };
 }

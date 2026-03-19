@@ -1,10 +1,9 @@
-const MEDALS = ['🥇', '🥈', '🥉'];
+const MEDALS = ['1º', '2º', '3º'];
 
 export default function GameOverPage({ result, player }) {
   if (!result) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh text-center px-8 gap-4">
-        <div className="text-5xl animate-pulse">🏁</div>
         <p className="text-white font-bold text-xl">Fim de jogo!</p>
       </div>
     );
@@ -18,7 +17,6 @@ export default function GameOverPage({ result, player }) {
 
       {/* Hero */}
       <div className="text-center mb-8">
-        <div className="text-6xl mb-3">{isWinner ? '🏆' : '🎮'}</div>
         <h1 className="text-3xl font-black text-white mb-1">
           {isWinner ? 'Você venceu!' : 'Fim de jogo!'}
         </h1>
@@ -65,7 +63,7 @@ export default function GameOverPage({ result, player }) {
               {/* Posição */}
               <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xl
                 bg-party-bg border border-party-border">
-                {medal ?? <span className="text-slate-500 text-sm font-bold">{i + 1}</span>}
+                <span className={`text-sm font-black ${i < 3 ? 'text-white' : 'text-slate-500'}`}>{medal}</span>
               </div>
 
               {/* Nome */}

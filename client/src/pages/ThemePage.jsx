@@ -2,14 +2,14 @@ import { useState } from 'react';
 import WaitingDots from '../components/WaitingDots';
 
 const SUGGESTIONS = [
-  { label: 'Filmes de Terror',       emoji: '👻' },
-  { label: 'Comidas do Verão',        emoji: '🍦' },
-  { label: 'Séries da Netflix',       emoji: '📺' },
-  { label: 'Músicas para Festa',      emoji: '🎵' },
-  { label: 'Destinos de Viagem',      emoji: '✈️' },
-  { label: 'Super-Heróis',            emoji: '🦸' },
-  { label: 'Jogos de Video Game',     emoji: '🕹️' },
-  { label: 'Sobremesas',              emoji: '🍰' },
+  'Filmes de Terror',
+  'Comidas do Verão',
+  'Séries da Netflix',
+  'Músicas para Festa',
+  'Destinos de Viagem',
+  'Super-Heróis',
+  'Jogos de Video Game',
+  'Sobremesas',
 ];
 
 export default function ThemePage({ isHost, onSubmitTheme, lobbyState }) {
@@ -31,7 +31,6 @@ export default function ThemePage({ isHost, onSubmitTheme, lobbyState }) {
   if (!isHost) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh px-6 text-center gap-6">
-        <div className="text-6xl">🎯</div>
         <div>
           <h2 className="text-2xl font-bold text-white mb-1">
             <span className="text-party-violet">{hostName}</span> está
@@ -71,7 +70,6 @@ export default function ThemePage({ isHost, onSubmitTheme, lobbyState }) {
   return (
     <div className="flex flex-col min-h-svh px-6 py-8">
       <div className="text-center mb-8">
-        <div className="text-4xl mb-2">🎯</div>
         <h2 className="text-xl font-bold text-party-violet">Escolha o Tema</h2>
         <p className="text-slate-400 text-sm mt-1">
           Todos vão ranquear seus Top 5 para este tema
@@ -103,7 +101,7 @@ export default function ThemePage({ isHost, onSubmitTheme, lobbyState }) {
             transition-all duration-150
           "
         >
-          🚀 Confirmar Tema
+          Confirmar Tema
         </button>
       </form>
 
@@ -113,20 +111,19 @@ export default function ThemePage({ isHost, onSubmitTheme, lobbyState }) {
           Sugestões
         </p>
         <div className="grid grid-cols-2 gap-2">
-          {SUGGESTIONS.map(({ label, emoji }) => (
+          {SUGGESTIONS.map((label) => (
             <button
               key={label}
               onClick={() => applySuggestion(label)}
               className="
-                flex items-center gap-2 text-sm
+                text-sm
                 bg-party-surface border border-party-border
                 hover:border-party-purple active:scale-95
                 text-slate-300 px-4 py-3 rounded-xl text-left
                 transition-all duration-150
               "
             >
-              <span className="text-lg">{emoji}</span>
-              <span className="leading-snug">{label}</span>
+              {label}
             </button>
           ))}
         </div>
